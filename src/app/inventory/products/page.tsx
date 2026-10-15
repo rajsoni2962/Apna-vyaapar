@@ -30,6 +30,7 @@ export default function ProductsPage() {
   // Form
   const [formData, setFormData] = useState<any>({
     name: '',
+    productType: 'PHYSICAL', // PHYSICAL or SERVICE
     brand: 'Dell',
     model: '',
     category: 'Laptop',
@@ -114,11 +115,13 @@ export default function ProductsPage() {
 
   const openEdit = (p: any) => {
     setEditProduct(p);
+    const isService = p.productType === 'SERVICE' || p.category?.toLowerCase() === 'service';
     setFormData({
       name: p.name,
-      brand: p.brand || 'Dell',
+      productType: isService ? 'SERVICE' : (p.productType || 'PHYSICAL'),
+      brand: p.brand || '',
       model: p.model || '',
-      category: p.category || 'Laptop',
+      category: p.category || (isService ? 'Repair Service' : 'Laptop'),
       cpu: p.cpu || '',
       generation: p.generation || '',
       ram: p.ram || '',
@@ -127,13 +130,14 @@ export default function ProductsPage() {
       storageType: p.storageType || '',
       gpu: p.gpu || '',
       displaySize: p.displaySize || '',
-      condition: p.condition || 'Refurbished Grade A',
-      hsn: p.hsn || '8471',
+      condition: p.condition || (isService ? 'Service' : 'Refurbished Grade A'),
+      hsn: p.hsn || (isService ? '9987' : '8471'),
       gstPercent: p.gstPercent || 18,
       purchasePrice: p.purchasePrice || 0,
       sellingPrice: p.sellingPrice || 0,
-      minStock: p.minStock || 1,
-      warranty: p.warranty || '6 Months',
+      minStock: isService ? 0 : (p.minStock || 1),
+      initialStock: isService ? 0 : (p.currentStock || 0),
+      warranty: p.warranty || (isService ? '30 Days Service Warranty' : '6 Months'),
       notes: p.notes || '',
     });
     setShowAddModal(true);
@@ -300,17 +304,23 @@ export default function ProductsPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span
-                        className={`text-xs font-black px-2.5 py-1 rounded-full ${
-                          p.currentStock <= 0
-                            ? 'bg-rose-100 text-rose-700'
-                            : p.currentStock <= p.minStock
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-emerald-100 text-emerald-800'
-                        }`}
-                      >
-                        {p.currentStock} in stock
-                      </span>
+                      {p.productType === 'SERVICE' || p.category?.toLowerCase() === 'service' ? (
+                        <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                          Service
+                        </span>
+                      ) : (
+                        <span
+                          className={`text-xs font-black px-2.5 py-1 rounded-full ${
+                            p.currentStock <= 0
+                              ? 'bg-rose-100 text-rose-700'
+                              : p.currentStock <= p.minStock
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}
+                        >
+                          {p.currentStock} in stock
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right text-slate-600 font-medium">
                       {formatCurrency(p.purchasePrice)}
@@ -319,9 +329,13 @@ export default function ProductsPage() {
                       {formatCurrency(p.sellingPrice)}
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className="text-purple-700 font-mono font-bold text-xs bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-100">
-                        {p._count?.serialNumbers || 0}
-                      </span>
+                      {p.productType === 'SERVICE' || p.category?.toLowerCase() === 'service' ? (
+                        <span className="text-slate-400 font-mono text-xs">-</span>
+                      ) : (
+                        <span className="text-purple-700 font-mono font-bold text-xs bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-100">
+                          {p._count?.serialNumbers || 0}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
                       <button
@@ -364,14 +378,68 @@ export default function ProductsPage() {
             </div>
 
             <form onSubmit={handleSaveProduct} className="space-y-4 text-xs">
+              {/* Item Type Selector */}
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Product Title *</label>
+                <label className="block text-slate-700 font-bold mb-1">Item Type *</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        productType: 'PHYSICAL',
+                        category: formData.category === 'Repair Service' ? 'Laptop' : formData.category,
+                        hsn: formData.hsn === '9987' ? '8471' : formData.hsn,
+                      })
+                    }
+                    className={`py-2 px-3 rounded-xl border text-left font-bold transition flex items-center justify-between ${
+                      formData.productType !== 'SERVICE'
+                        ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 ring-2 ring-indigo-600/20'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>Physical Product</span>
+                    <span className="text-[10px] font-semibold text-slate-400">Inventory Tracked</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        productType: 'SERVICE',
+                        category: 'Repair Service',
+                        hsn: '9987',
+                        initialStock: 0,
+                        minStock: 0,
+                      })
+                    }
+                    className={`py-2 px-3 rounded-xl border text-left font-bold transition flex items-center justify-between ${
+                      formData.productType === 'SERVICE'
+                        ? 'border-blue-600 bg-blue-50/50 text-blue-900 ring-2 ring-blue-600/20'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>Service</span>
+                    <span className="text-[10px] font-semibold text-blue-600">No Stock Units</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">
+                  {formData.productType === 'SERVICE' ? 'Service Title *' : 'Product Title *'}
+                </label>
                 <input
                   type="text"
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g. Dell Latitude 5410 | i5 10th Gen | 16GB RAM | 256GB SSD"
+                  placeholder={
+                    formData.productType === 'SERVICE'
+                      ? 'e.g. Laptop Deep Cleaning & Thermal Paste Replacement'
+                      : 'e.g. Dell Latitude 5410 | i5 10th Gen | 16GB RAM | 256GB SSD'
+                  }
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl font-semibold"
                 />
               </div>
@@ -384,44 +452,59 @@ export default function ProductsPage() {
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl"
                   >
-                    <option value="Laptop">Laptop</option>
-                    <option value="Desktop">Desktop</option>
-                    <option value="SSD">SSD</option>
-                    <option value="RAM">RAM</option>
-                    <option value="Accessories">Accessories</option>
-                    <option value="Repair Service">Repair Service</option>
-                    <option value="Custom PC">Custom PC</option>
-                    <option value="Motherboard">Motherboard</option>
-                    <option value="GPU">GPU</option>
-                    <option value="Other">Other</option>
+                    {formData.productType === 'SERVICE' ? (
+                      <>
+                        <option value="Repair Service">Repair Service</option>
+                        <option value="Installation">Installation & Setup</option>
+                        <option value="Maintenance">Cleaning & Maintenance</option>
+                        <option value="Data Recovery">Data Recovery</option>
+                        <option value="Other Service">Other Service</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Laptop">Laptop</option>
+                        <option value="Desktop">Desktop</option>
+                        <option value="SSD">SSD</option>
+                        <option value="RAM">RAM</option>
+                        <option value="Accessories">Accessories</option>
+                        <option value="Custom PC">Custom PC</option>
+                        <option value="Motherboard">Motherboard</option>
+                        <option value="GPU">GPU</option>
+                        <option value="Other">Other</option>
+                      </>
+                    )}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-slate-600 font-semibold mb-1">Brand</label>
+                  <label className="block text-slate-600 font-semibold mb-1">
+                    {formData.productType === 'SERVICE' ? 'Service Code / Brand' : 'Brand'}
+                  </label>
                   <input
                     type="text"
                     value={formData.brand}
                     onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                    placeholder="e.g. Dell, HP, Lenovo"
+                    placeholder={formData.productType === 'SERVICE' ? 'e.g. In-Store / On-Site' : 'e.g. Dell, HP, Lenovo'}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-slate-600 font-semibold mb-1">Model</label>
+                  <label className="block text-slate-600 font-semibold mb-1">
+                    {formData.productType === 'SERVICE' ? 'Sub-Type / Model' : 'Model'}
+                  </label>
                   <input
                     type="text"
                     value={formData.model}
                     onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                    placeholder="e.g. Latitude 5410"
+                    placeholder={formData.productType === 'SERVICE' ? 'e.g. All Laptops / General' : 'e.g. Latitude 5410'}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl"
                   />
                 </div>
               </div>
 
-              {/* Laptop Specs */}
-              {formData.category === 'Laptop' && (
+              {/* Laptop Specs - Only for Physical Laptops */}
+              {formData.productType !== 'SERVICE' && formData.category === 'Laptop' && (
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                   <span className="text-slate-700 font-bold block text-[11px] uppercase tracking-wider">
                     Detailed Laptop Specifications
@@ -474,7 +557,9 @@ export default function ProductsPage() {
               {/* Pricing & Stock */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-slate-600 font-semibold mb-1">Purchase Price (₹)</label>
+                  <label className="block text-slate-600 font-semibold mb-1">
+                    {formData.productType === 'SERVICE' ? 'Internal Cost (₹)' : 'Purchase Price (₹)'}
+                  </label>
                   <input
                     type="number"
                     step="any"
@@ -485,7 +570,9 @@ export default function ProductsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-600 font-semibold mb-1">Selling Price (₹) *</label>
+                  <label className="block text-slate-600 font-semibold mb-1">
+                    {formData.productType === 'SERVICE' ? 'Service Rate (₹) *' : 'Selling Price (₹) *'}
+                  </label>
                   <input
                     type="number"
                     step="any"
@@ -496,7 +583,7 @@ export default function ProductsPage() {
                   />
                 </div>
 
-                {!editProduct && (
+                {formData.productType !== 'SERVICE' && !editProduct && (
                   <div>
                     <label className="block text-slate-600 font-semibold mb-1">Opening Stock</label>
                     <input
@@ -509,16 +596,25 @@ export default function ProductsPage() {
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-slate-600 font-semibold mb-1">Min Stock Alert</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={formData.minStock}
-                    onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                  />
-                </div>
+                {formData.productType !== 'SERVICE' && (
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">Min Stock Alert</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.minStock}
+                      onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                    />
+                  </div>
+                )}
+
+                {formData.productType === 'SERVICE' && (
+                  <div className="col-span-2 p-3 bg-blue-50/70 border border-blue-200 rounded-xl flex items-center gap-2 text-blue-800">
+                    <span className="font-bold">Service Mode:</span>
+                    <span className="text-[11px]">No inventory units tracked. Unlimited service capacity.</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">

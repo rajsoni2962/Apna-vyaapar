@@ -2,10 +2,26 @@
 
 import React, { useRef, useState } from 'react';
 import Image from 'next/image';
-import { Printer, Download, Share2, ArrowLeft, CheckCircle2, QrCode, MessageCircle, Eye } from 'lucide-react';
+import {
+  Printer,
+  Download,
+  Share2,
+  ArrowLeft,
+  CheckCircle2,
+  QrCode,
+  MessageCircle,
+  Eye,
+  Edit,
+  History,
+  GitCompare,
+  RotateCcw,
+  AlertTriangle
+} from 'lucide-react';
 import { formatCurrency, formatDate, numberToWords } from '@/lib/utils';
 import Link from 'next/link';
 import WhatsAppShareModal from '@/components/invoice/WhatsAppShareModal';
+import InvoiceAuditHistoryModal from '@/components/invoice/InvoiceAuditHistoryModal';
+import InvoiceVersionCompareModal from '@/components/invoice/InvoiceVersionCompareModal';
 
 import { downloadInvoicePdf, viewInvoicePdf } from '@/lib/invoicePdfGenerator';
 
@@ -17,9 +33,12 @@ interface InvoicePrintViewProps {
 export default function InvoicePrintView({ invoice, settings }: InvoicePrintViewProps) {
   const printRef = useRef<HTMLDivElement>(null);
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
   const [currentInvoice, setCurrentInvoice] = useState(invoice);
   const [downloading, setDownloading] = useState(false);
   const [viewing, setViewing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   // 1. Reconstruct business from saved historical snapshot (prioritized over mutable live settings)
   let bizSnapshot: any = {};
@@ -119,8 +138,55 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
   const upiLink = `upi://pay?pa=${encodeURIComponent(business.upiId)}&pn=${encodeURIComponent(business.companyName)}&am=${encodeURIComponent(grandTotal)}&cu=INR&tn=${encodeURIComponent(`Inv ${invoice.invoiceNumber}`)}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiLink)}`;
 
+  const handleRestore = async () => {
+    if (!confirm('Restore this invoice back to active invoices?')) return;
+    setRestoring(true);
+    try {
+      const res = await fetch(`/api/invoices/recently-deleted/${currentInvoice.id}/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restoredBy: 'admin' }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        alert('Invoice restored successfully!');
+        window.location.reload();
+      } else {
+        alert(json.error || 'Failed to restore invoice');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error restoring invoice');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Soft-Deleted Recovery Notice Banner */}
+      {currentInvoice.isDeleted && (
+        <div className="print:hidden bg-amber-50 border border-amber-300 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-center gap-3 text-amber-900">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+            <div>
+              <p className="font-bold text-xs sm:text-sm">This invoice is in Recently Deleted (7-day recovery period)</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Deleted on {currentInvoice.deletedAt ? new Date(currentInvoice.deletedAt).toLocaleString('en-IN') : 'N/A'} by {currentInvoice.deletedBy || 'admin'}.
+                {currentInvoice.deletionReason && ` Reason: "${currentInvoice.deletionReason}".`}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleRestore}
+            disabled={restoring}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>{restoring ? 'Restoring...' : 'Restore Invoice'}</span>
+          </button>
+        </div>
+      )}
+
       {/* Action Header (Hidden in Print) */}
       <div className="print:hidden flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-3">
@@ -146,6 +212,9 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
               >
                 {invoice.status === 'Cancelled' ? 'Cancelled' : invoice.paymentStatus}
               </span>
+              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                v{invoice.revisionNumber || 1}
+              </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               Customer: <span className="font-medium text-slate-700">{customer.name || invoice.customer?.name}</span> • Date: {formatDate(invoice.date)}
@@ -153,44 +222,74 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Edit Invoice Action */}
+          <Link
+            href={`/sales/invoices/${currentInvoice.id}/edit`}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-xs transition"
+            title="Edit permitted invoice details"
+          >
+            <Edit className="w-3.5 h-3.5 text-slate-600" />
+            <span>Edit</span>
+          </Link>
+
+          {/* Audit History Action */}
+          <button
+            onClick={() => setIsAuditModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl shadow-xs transition"
+            title="View complete invoice change history and audit trail"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>Audit Trail</span>
+          </button>
+
+          {/* Version Comparison Action */}
+          <button
+            onClick={() => setIsCompareModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl shadow-xs transition"
+            title="Compare any two invoice versions"
+          >
+            <GitCompare className="w-3.5 h-3.5" />
+            <span>Compare Versions</span>
+          </button>
+
           {invoice.whatsappSharedAt && (
-            <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              WhatsApp Shared ✓
+              Shared
             </span>
           )}
           <button
             onClick={handleViewPdf}
             disabled={viewing}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl shadow-xs transition disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl shadow-xs transition disabled:opacity-50"
             title="View Tax Invoice PDF on demand in new tab"
           >
-            <Eye className="w-4 h-4 text-indigo-600" />
+            <Eye className="w-3.5 h-3.5 text-indigo-600" />
             <span>{viewing ? 'Opening...' : 'View PDF'}</span>
           </button>
           <button
             onClick={handleDownload}
             disabled={downloading}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-950 bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-amber-400 rounded-xl shadow-xs shadow-amber-500/20 transition disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-amber-400 rounded-xl shadow-xs shadow-amber-500/20 transition disabled:opacity-50"
             title="Download Tax Invoice PDF directly"
           >
-            <Download className="w-4 h-4 stroke-[2.5]" />
-            <span>{downloading ? 'Downloading...' : 'Download PDF'}</span>
+            <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>{downloading ? 'Downloading...' : 'PDF'}</span>
           </button>
           <button
             onClick={() => setIsWhatsAppOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm transition"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition"
           >
-            <MessageCircle className="w-4 h-4" />
-            Share on WhatsApp
+            <MessageCircle className="w-3.5 h-3.5" />
+            <span>WhatsApp</span>
           </button>
           <button
             onClick={handlePrint}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition"
           >
-            <Printer className="w-4 h-4 text-slate-500" />
-            Print / Save
+            <Printer className="w-3.5 h-3.5 text-slate-500" />
+            <span>Print</span>
           </button>
         </div>
       </div>
@@ -515,6 +614,20 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
           }}
         />
       )}
+
+      {/* Invoice Change History / Audit Trail Modal */}
+      <InvoiceAuditHistoryModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        invoice={currentInvoice}
+      />
+
+      {/* Invoice Version Comparison Modal */}
+      <InvoiceVersionCompareModal
+        isOpen={isCompareModalOpen}
+        onClose={() => setIsCompareModalOpen(false)}
+        invoice={currentInvoice}
+      />
     </div>
   );
 }

@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model BusinessSettings {
@@ -87,6 +88,7 @@ model Supplier {
 model Product {
   id           String   @id @default(cuid())
   name         String
+  productType  String   @default("PHYSICAL") // PHYSICAL or SERVICE
   brand        String?
   model        String?
   category     String   @default("Laptop")
@@ -119,6 +121,7 @@ model Product {
   @@index([name])
   @@index([brand])
   @@index([category])
+  @@index([productType])
 }
 
 model SerialNumber {
@@ -190,6 +193,14 @@ model Invoice {
   pdfGeneratedAt    DateTime?     // When temporary PDF was last generated
   pdfStorageUrl     String?       // Stored ONLY when explicit retention feature is requested
 
+  // Soft Delete & 7-Day Recovery Fields
+  isDeleted         Boolean       @default(false)
+  deletedAt         DateTime?
+  deletedBy         String?
+  deletionReason    String?
+  restoredAt        DateTime?
+  restoredBy        String?
+
   items           InvoiceItem[]
   payments        Payment[]
   serialNumbers   SerialNumber[]
@@ -201,6 +212,8 @@ model Invoice {
   @@index([customerId])
   @@index([status])
   @@index([isFinalized])
+  @@index([isDeleted])
+  @@index([deletedAt])
 }
 
 model InvoiceItem {
@@ -233,9 +246,10 @@ model InvoiceRevisionAudit {
   invoiceId        String
   invoice          Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   revisionNumber   Int
-  action           String   // CREATED_FINALIZED, REVISED, CANCELLED
+  action           String   // CREATED_FINALIZED, REVISED, EDITED, CANCELLED, SOFT_DELETED, RESTORED
   changedBy        String   @default("admin")
   changeReason     String
+  diffSummary      String?  // Detailed JSON array: [{ field, oldVal, newVal }]
   previousSnapshot String?  // Full JSON of previous invoice state
   newSnapshot      String   // Full JSON of new invoice state
   createdAt        DateTime @default(now())

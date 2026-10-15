@@ -7,18 +7,28 @@ export async function GET(request: Request) {
     const search = searchParams.get('search') || '';
     const category = searchParams.get('category') || '';
     const brand = searchParams.get('brand') || '';
+    const productType = searchParams.get('productType') || '';
     const lowStockOnly = searchParams.get('lowStock') === 'true';
 
     const whereClause: any = {};
 
     if (search) {
       whereClause.OR = [
-        { name: { contains: search } },
-        { brand: { contains: search } },
-        { model: { contains: search } },
-        { cpu: { contains: search } },
-        { ram: { contains: search } },
-        { storage: { contains: search } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { brand: { contains: search, mode: 'insensitive' } },
+        { model: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+        { cpu: { contains: search, mode: 'insensitive' } },
+        { ram: { contains: search, mode: 'insensitive' } },
+        { storage: { contains: search, mode: 'insensitive' } },
+        { hsn: { contains: search, mode: 'insensitive' } },
+        {
+          serialNumbers: {
+            some: {
+              serialNumber: { contains: search, mode: 'insensitive' },
+            },
+          },
+        },
       ];
     }
 
@@ -28,6 +38,10 @@ export async function GET(request: Request) {
 
     if (brand && brand !== 'All') {
       whereClause.brand = brand;
+    }
+
+    if (productType && productType !== 'All') {
+      whereClause.productType = productType;
     }
 
     const products = await db.product.findMany({
@@ -48,8 +62,9 @@ export async function GET(request: Request) {
       },
     });
 
+    // Services never trigger low-stock alerts
     const filtered = lowStockOnly
-      ? products.filter((p) => p.currentStock <= p.minStock)
+      ? products.filter((p) => p.productType !== 'SERVICE' && p.currentStock <= p.minStock)
       : products;
 
     return NextResponse.json({ success: true, data: filtered });
@@ -63,6 +78,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const {
       name,
+      productType, // 'PHYSICAL' or 'SERVICE'
       brand,
       model,
       category,
@@ -86,42 +102,46 @@ export async function POST(request: Request) {
       serialNumbers, // optional array of serial strings
     } = body;
 
-    if (!name) {
-      return NextResponse.json({ success: false, error: 'Product name is required' }, { status: 400 });
+    if (!name || !name.trim()) {
+      return NextResponse.json({ success: false, error: 'Product/Service name is required' }, { status: 400 });
     }
 
-    const initStock = parseInt(initialStock) || 0;
+    const isService = productType === 'SERVICE' || category?.toLowerCase() === 'service';
+    const finalProductType = isService ? 'SERVICE' : 'PHYSICAL';
+    const initStock = isService ? 0 : parseInt(initialStock) || 0;
     const pPrice = parseFloat(purchasePrice) || 0;
     const sPrice = parseFloat(sellingPrice) || 0;
 
     const newProduct = await db.$transaction(async (tx) => {
       const product = await tx.product.create({
         data: {
-          name,
-          brand: brand || null,
-          model: model || null,
-          category: category || 'Laptop',
-          cpu: cpu || null,
-          generation: generation || null,
-          ram: ram || null,
-          ramType: ramType || null,
-          storage: storage || null,
-          storageType: storageType || null,
-          gpu: gpu || null,
-          displaySize: displaySize || null,
-          condition: condition || 'Refurbished Grade A',
-          hsn: hsn || '8471',
-          gstPercent: parseFloat(gstPercent) || 18,
+          name: name.trim(),
+          productType: finalProductType,
+          brand: isService ? null : (brand || null),
+          model: isService ? null : (model || null),
+          category: category || (isService ? 'Service' : 'Laptop'),
+          cpu: isService ? null : (cpu || null),
+          generation: isService ? null : (generation || null),
+          ram: isService ? null : (ram || null),
+          ramType: isService ? null : (ramType || null),
+          storage: isService ? null : (storage || null),
+          storageType: isService ? null : (storageType || null),
+          gpu: isService ? null : (gpu || null),
+          displaySize: isService ? null : (displaySize || null),
+          condition: isService ? 'Service' : (condition || 'Refurbished Grade A'),
+          hsn: hsn || (isService ? '9987' : '8471'),
+          gstPercent: parseFloat(gstPercent) !== undefined ? parseFloat(gstPercent) : 18,
           purchasePrice: pPrice,
           sellingPrice: sPrice,
-          minStock: parseInt(minStock) || 1,
+          minStock: isService ? 0 : (parseInt(minStock) || 1),
           currentStock: initStock,
-          warranty: warranty || '6 Months',
+          warranty: warranty || (isService ? '30 Days Service Warranty' : '6 Months'),
           notes: notes || null,
         },
       });
 
-      if (initStock > 0) {
+      // Only track physical product initial stock movement and serial numbers
+      if (!isService && initStock > 0) {
         await tx.stockMovement.create({
           data: {
             productId: product.id,
@@ -135,10 +155,9 @@ export async function POST(request: Request) {
           },
         });
 
-        // If serial numbers provided
         if (Array.isArray(serialNumbers) && serialNumbers.length > 0) {
           for (const sn of serialNumbers) {
-            if (sn && sn.trim()) {
+            if (sn && typeof sn === 'string' && sn.trim()) {
               await tx.serialNumber.create({
                 data: {
                   serialNumber: sn.trim(),

@@ -16,11 +16,14 @@ import {
   MessageCircle,
   FileText,
   Eye,
-  Download
+  Download,
+  Wrench,
 } from 'lucide-react';
 import { formatCurrency, numberToWords } from '@/lib/utils';
 import Link from 'next/link';
 import WhatsAppShareModal from '@/components/invoice/WhatsAppShareModal';
+import CustomerSearchSelect from '@/components/common/CustomerSearchSelect';
+import ProductSearchSelect from '@/components/common/ProductSearchSelect';
 
 export default function NewSalesInvoicePage() {
   const router = useRouter();
@@ -44,6 +47,8 @@ export default function NewSalesInvoicePage() {
   const [items, setItems] = useState<any[]>([
     {
       productId: '',
+      product: null,
+      isService: false,
       serialNumber: '',
       description: '',
       hsn: '8471',
@@ -96,22 +101,39 @@ export default function NewSalesInvoicePage() {
 
   const round2 = (num: number) => Math.round(num * 100) / 100;
 
-  const handleProductSelect = (index: number, prodId: string) => {
-    const prod = products.find((p) => p.id === prodId);
-    if (!prod) return;
-
+  const handleProductSelect = (index: number, prod: any) => {
     const updated = [...items];
     const item = { ...updated[index] };
 
-    item.productId = prodId;
+    if (!prod) {
+      item.productId = '';
+      item.product = null;
+      item.isService = false;
+      item.description = '';
+      item.rate = 0;
+      item.serialNumber = '';
+      item.availableSerials = [];
+      item.taxableAmount = 0;
+      item.gstAmount = 0;
+      item.total = 0;
+      updated[index] = item;
+      setItems(updated);
+      return;
+    }
+
+    const isService = prod.productType === 'SERVICE' || prod.category?.toLowerCase() === 'service';
+
+    item.productId = prod.id;
+    item.product = prod;
+    item.isService = isService;
     item.description = prod.name;
-    item.hsn = prod.hsn || '8471';
+    item.hsn = prod.hsn || (isService ? '9987' : '8471');
     item.rate = prod.sellingPrice || 0;
-    item.gstPercent = prod.gstPercent || 18;
+    item.gstPercent = prod.gstPercent !== undefined ? prod.gstPercent : 18;
     item.serialNumber = '';
 
-    // Filter available serial numbers for this product
-    item.availableSerials = prod.serialNumbers || [];
+    // Filter available serial numbers for physical products
+    item.availableSerials = isService ? [] : (prod.serialNumbers || []);
 
     const qty = item.quantity || 1;
     const baseAmount = Math.max(0, qty * item.rate - (item.discount || 0));
@@ -338,27 +360,25 @@ export default function NewSalesInvoicePage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="sm:col-span-2">
+            <div className="space-y-4 text-xs">
+              <div>
                 <label className="block text-slate-600 font-semibold mb-1">
-                  Select Existing Customer
+                  Select Existing Customer (Search by Name, Mobile, GSTIN, City)
                 </label>
-                <select
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-bold focus:outline-indigo-600"
-                >
-                  <option value="">-- Choose Customer --</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} • {c.phone} {c.currentBalance > 0 ? `(Due: ₹${c.currentBalance})` : ''}
-                    </option>
-                  ))}
-                </select>
+                <CustomerSearchSelect
+                  selectedCustomer={selectedCustomer || null}
+                  onSelectCustomer={(cust) => {
+                    setCustomerId(cust?.id || '');
+                    if (cust && !customers.some((c) => c.id === cust.id)) {
+                      setCustomers((prev) => [...prev, cust]);
+                    }
+                  }}
+                  onAddNewCustomer={() => setShowAddCustomerModal(true)}
+                />
               </div>
 
               {selectedCustomer && (
-                <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
                     <span className="text-slate-400 block text-[11px]">Phone & Email</span>
                     <strong className="text-slate-800">{selectedCustomer.phone}</strong>
@@ -370,7 +390,7 @@ export default function NewSalesInvoicePage() {
                     <div className="text-slate-800 font-medium truncate">{selectedCustomer.address || 'Ahmedabad, Gujarat'}</div>
                     <div className="text-slate-500 font-mono">{selectedCustomer.gstin || 'Unregistered Consumer'}</div>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
@@ -410,24 +430,16 @@ export default function NewSalesInvoicePage() {
                     )}
                   </div>
 
-                  {/* Product Dropdown */}
+                  {/* Product Search Autocomplete */}
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs">
                     <div className="sm:col-span-8">
                       <label className="block text-slate-600 font-semibold mb-1">
-                        Select Product from Stock
+                        Select Product / Service (Search Name, Specs, Brand, Model, Serial...)
                       </label>
-                      <select
-                        value={it.productId}
-                        onChange={(e) => handleProductSelect(idx, e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 font-bold focus:outline-indigo-600"
-                      >
-                        <option value="">-- Choose Product --</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id} disabled={p.currentStock <= 0}>
-                            {p.name} — [Stock: {p.currentStock} {p.currentStock <= 0 ? '(OUT OF STOCK)' : ''}] — {formatCurrency(p.sellingPrice)}
-                          </option>
-                        ))}
-                      </select>
+                      <ProductSearchSelect
+                        selectedProduct={it.product || products.find((p) => p.id === it.productId) || null}
+                        onSelectProduct={(p) => handleProductSelect(idx, p)}
+                      />
                     </div>
 
                     <div className="sm:col-span-4">
@@ -435,18 +447,25 @@ export default function NewSalesInvoicePage() {
                         <Hash className="w-3.5 h-3.5" />
                         <span>Serial Number</span>
                       </label>
-                      <select
-                        value={it.serialNumber}
-                        onChange={(e) => handleItemChange(idx, 'serialNumber', e.target.value)}
-                        className="w-full px-3 py-2 bg-purple-50/50 border border-purple-200 rounded-xl text-purple-900 font-mono font-semibold focus:outline-purple-600"
-                      >
-                        <option value="">-- Select In-Stock Serial # --</option>
-                        {it.availableSerials?.map((sn: any) => (
-                          <option key={sn.id} value={sn.serialNumber}>
-                            {sn.serialNumber}
-                          </option>
-                        ))}
-                      </select>
+                      {it.isService ? (
+                        <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-400 font-medium text-xs flex items-center gap-1.5">
+                          <Wrench className="w-3.5 h-3.5 text-blue-500" />
+                          <span>N/A (Service Item)</span>
+                        </div>
+                      ) : (
+                        <select
+                          value={it.serialNumber}
+                          onChange={(e) => handleItemChange(idx, 'serialNumber', e.target.value)}
+                          className="w-full px-3 py-2 bg-purple-50/50 border border-purple-200 rounded-xl text-purple-900 font-mono font-semibold focus:outline-purple-600"
+                        >
+                          <option value="">-- Select In-Stock Serial # --</option>
+                          {it.availableSerials?.map((sn: any) => (
+                            <option key={sn.id} value={sn.serialNumber}>
+                              {sn.serialNumber}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
 

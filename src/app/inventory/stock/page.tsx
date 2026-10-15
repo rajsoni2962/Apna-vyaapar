@@ -57,10 +57,15 @@ export default function StockOverviewPage() {
     return matchesSearch && matchesCat;
   });
 
-  const totalStockUnits = products.reduce((acc, p) => acc + p.currentStock, 0);
-  const totalCostValuation = products.reduce((acc, p) => acc + p.currentStock * p.purchasePrice, 0);
-  const totalRetailValuation = products.reduce((acc, p) => acc + p.currentStock * p.sellingPrice, 0);
-  const lowStockCount = products.filter((p: any) => p.currentStock <= (p.minStock ?? p.minimumStock ?? 1)).length;
+  const physicalProducts = products.filter(
+    (p: any) => p.productType !== 'SERVICE' && p.category?.toLowerCase() !== 'service'
+  );
+  const totalStockUnits = physicalProducts.reduce((acc, p) => acc + p.currentStock, 0);
+  const totalCostValuation = physicalProducts.reduce((acc, p) => acc + p.currentStock * p.purchasePrice, 0);
+  const totalRetailValuation = physicalProducts.reduce((acc, p) => acc + p.currentStock * p.sellingPrice, 0);
+  const lowStockCount = physicalProducts.filter(
+    (p: any) => p.currentStock <= (p.minStock ?? p.minimumStock ?? 1)
+  ).length;
 
   return (
     <AppLayout>
@@ -195,18 +200,26 @@ export default function StockOverviewPage() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          <span
-                            className={`font-black text-sm px-2.5 py-1 rounded-lg ${
-                              isOut
-                                ? 'bg-rose-100 text-rose-700'
-                                : isLow
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-emerald-50 text-emerald-700'
-                            }`}
-                          >
-                            {p.currentStock}
-                          </span>
-                          <div className="text-[10px] text-slate-400 mt-1">Min: {threshold}</div>
+                          {p.productType === 'SERVICE' || p.category?.toLowerCase() === 'service' ? (
+                            <span className="font-bold text-xs px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                              Service
+                            </span>
+                          ) : (
+                            <>
+                              <span
+                                className={`font-black text-sm px-2.5 py-1 rounded-lg ${
+                                  isOut
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : isLow
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-emerald-50 text-emerald-700'
+                                }`}
+                              >
+                                {p.currentStock}
+                              </span>
+                              <div className="text-[10px] text-slate-400 mt-1">Min: {threshold}</div>
+                            </>
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-right font-medium text-slate-700">
                           ₹{p.purchasePrice.toLocaleString('en-IN')}
@@ -215,10 +228,18 @@ export default function StockOverviewPage() {
                           ₹{p.sellingPrice.toLocaleString('en-IN')}
                         </td>
                         <td className="py-3.5 px-4 text-right font-bold text-indigo-600">
-                          ₹{costVal.toLocaleString('en-IN')}
+                          {p.productType === 'SERVICE' || p.category?.toLowerCase() === 'service' ? (
+                            <span className="text-slate-400 font-mono text-xs">-</span>
+                          ) : (
+                            `₹${costVal.toLocaleString('en-IN')}`
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          {isOut ? (
+                          {p.productType === 'SERVICE' || p.category?.toLowerCase() === 'service' ? (
+                            <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                              Service
+                            </span>
+                          ) : isOut ? (
                             <span className="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
                               Out of Stock
                             </span>
@@ -228,7 +249,7 @@ export default function StockOverviewPage() {
                             </span>
                           ) : (
                             <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                              Healthy
+                              Normal
                             </span>
                           )}
                         </td>

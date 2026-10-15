@@ -21,7 +21,8 @@ import {
   History,
   BookOpen,
   SlidersHorizontal,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -175,6 +176,18 @@ export default function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarPr
                   }`}
                 >
                   <span>Sales Returns</span>
+                </Link>
+                <Link
+                  href="/sales/recently-deleted"
+                  onClick={onCloseMobile}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                    isActive('/sales/recently-deleted')
+                      ? 'text-rose-400 bg-rose-950/40 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Recently Deleted</span>
                 </Link>
               </div>
             )}

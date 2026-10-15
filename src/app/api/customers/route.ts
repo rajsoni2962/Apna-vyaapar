@@ -10,10 +10,11 @@ export async function GET(request: Request) {
       where: search
         ? {
             OR: [
-              { name: { contains: search } },
-              { phone: { contains: search } },
-              { email: { contains: search } },
-              { gstin: { contains: search } },
+              { name: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } },
+              { gstin: { contains: search, mode: 'insensitive' } },
+              { address: { contains: search, mode: 'insensitive' } },
             ],
           }
         : undefined,

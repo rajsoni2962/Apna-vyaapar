@@ -32,53 +32,73 @@ export async function GET(
   }
 }
 
-export async function POST(
+/**
+ * DELETE /api/invoices/[id]
+ * Soft delete invoice: moves to Recently Deleted (7-day recovery).
+ * Safely restores inventory for physical products and decrements customer balance.
+ */
+export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
-    const { action, reason, changedBy, updates } = body;
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      // json body optional
+    }
+
+    const reason = body.reason?.trim() || 'Moved to Recently Deleted';
+    const deletedBy = body.deletedBy?.trim() || 'admin';
 
     const invoice = await db.invoice.findUnique({
       where: { id },
-      include: { items: true, serialNumbers: true, customer: true },
+      include: {
+        items: { include: { product: true } },
+        serialNumbers: true,
+      },
     });
 
     if (!invoice) {
       return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 });
     }
 
-    if (action === 'cancel') {
-      if (invoice.status === 'Cancelled') {
-        return NextResponse.json({ success: false, error: 'Invoice is already cancelled' }, { status: 400 });
-      }
+    if (invoice.isDeleted) {
+      return NextResponse.json({ success: false, error: 'Invoice is already in Recently Deleted' }, { status: 400 });
+    }
 
-      const cancelled = await db.$transaction(async (tx) => {
-        // 1. Restore stock and record reverse stock movement
+    const previousSnapshot = JSON.stringify(invoice);
+
+    const deleted = await db.$transaction(async (tx) => {
+      // 1. If invoice was Confirmed, restore physical stock and serials
+      if (invoice.status === 'Confirmed') {
         for (const it of invoice.items) {
-          const prod = await tx.product.update({
-            where: { id: it.productId },
-            data: { currentStock: { increment: it.quantity } },
-          });
+          const isService = it.product?.productType === 'SERVICE' || it.product?.category?.toLowerCase() === 'service';
+          if (!isService && it.productId) {
+            const updatedProd = await tx.product.update({
+              where: { id: it.productId },
+              data: { currentStock: { increment: it.quantity } },
+            });
 
-          await tx.stockMovement.create({
-            data: {
-              productId: it.productId,
-              type: 'RETURN_CUSTOMER',
-              referenceType: 'INVOICE_CANCELLED',
-              referenceId: invoice.id,
-              referenceNumber: invoice.invoiceNumber,
-              quantityChange: it.quantity,
-              balanceAfter: prod.currentStock,
-              unitPrice: it.rate,
-              notes: `Stock restored upon cancellation of Invoice ${invoice.invoiceNumber}`,
-            },
-          });
+            await tx.stockMovement.create({
+              data: {
+                productId: it.productId,
+                type: 'RETURN_CUSTOMER',
+                referenceType: 'INVOICE_DELETED',
+                referenceId: invoice.id,
+                referenceNumber: invoice.invoiceNumber,
+                quantityChange: it.quantity,
+                balanceAfter: updatedProd.currentStock,
+                unitPrice: it.rate,
+                notes: `Stock restored upon soft-deleting Invoice ${invoice.invoiceNumber}`,
+              },
+            });
+          }
         }
 
-        // 2. Restore serial numbers back to 'In Stock'
+        // Restore serial numbers
         for (const sn of invoice.serialNumbers) {
           await tx.serialNumber.update({
             where: { id: sn.id },
@@ -93,115 +113,60 @@ export async function POST(
           });
         }
 
-        // 3. Adjust customer balance (reverse outstanding)
+        // Deduct customer unpaid balance
         if (invoice.balanceDue > 0) {
           await tx.customer.update({
             where: { id: invoice.customerId },
             data: { currentBalance: { decrement: invoice.balanceDue } },
           });
         }
-
-        // 4. Mark invoice cancelled
-        const updated = await tx.invoice.update({
-          where: { id },
-          data: { status: 'Cancelled' },
-        });
-
-        // 5. Record cancellation in audit trail
-        await tx.invoiceRevisionAudit.create({
-          data: {
-            invoiceId: id,
-            revisionNumber: invoice.revisionNumber,
-            action: 'CANCELLED',
-            changedBy: changedBy || 'admin',
-            changeReason: reason || 'Customer requested invoice cancellation',
-            previousSnapshot: JSON.stringify({
-              invoiceNumber: invoice.invoiceNumber,
-              status: invoice.status,
-              grandTotal: invoice.grandTotal,
-              balanceDue: invoice.balanceDue,
-            }),
-            newSnapshot: JSON.stringify({
-              invoiceNumber: invoice.invoiceNumber,
-              status: 'Cancelled',
-            }),
-          },
-        });
-
-        return updated;
-      });
-
-      return NextResponse.json({ success: true, data: cancelled });
-    }
-
-    if (action === 'revise' || action === 'correct') {
-      if (!reason || typeof reason !== 'string' || !reason.trim()) {
-        return NextResponse.json(
-          { success: false, error: 'A revision reason is mandatory to modify a finalized invoice.' },
-          { status: 400 }
-        );
       }
 
-      if (invoice.status === 'Cancelled') {
-        return NextResponse.json(
-          { success: false, error: 'Cannot revise a cancelled invoice.' },
-          { status: 400 }
-        );
-      }
-
-      const nextRev = (invoice.revisionNumber || 1) + 1;
-      const prevSnapshot = JSON.stringify(invoice);
-
-      const revisedInvoice = await db.$transaction(async (tx) => {
-        const updateData: any = {
-          revisionNumber: nextRev,
-          revisionReason: reason.trim(),
-        };
-
-        if (updates) {
-          if (updates.notes !== undefined) updateData.notes = updates.notes;
-          if (updates.terms !== undefined) updateData.terms = updates.terms;
-          if (updates.paymentMode !== undefined) updateData.paymentMode = updates.paymentMode;
-          if (updates.dueDate !== undefined) updateData.dueDate = updates.dueDate ? new Date(updates.dueDate) : null;
-          if (updates.customerSnapshot !== undefined) {
-            updateData.customerSnapshot = typeof updates.customerSnapshot === 'string'
-              ? updates.customerSnapshot
-              : JSON.stringify(updates.customerSnapshot);
-          }
-        }
-
-        const updated = await tx.invoice.update({
-          where: { id },
-          data: updateData,
-        });
-
-        await tx.invoiceRevisionAudit.create({
-          data: {
-            invoiceId: id,
-            revisionNumber: nextRev,
-            action: 'REVISED',
-            changedBy: changedBy || 'admin',
-            changeReason: reason.trim(),
-            previousSnapshot: prevSnapshot,
-            newSnapshot: JSON.stringify(updated),
-          },
-        });
-
-        return updated;
+      // 2. Mark invoice soft-deleted with timestamp and audit info
+      const now = new Date();
+      const updated = await tx.invoice.update({
+        where: { id },
+        data: {
+          isDeleted: true,
+          deletedAt: now,
+          deletedBy,
+          deletionReason: reason,
+        },
       });
 
-      return NextResponse.json({ success: true, data: revisedInvoice });
-    }
+      // 3. Record audit trail
+      await tx.invoiceRevisionAudit.create({
+        data: {
+          invoiceId: id,
+          revisionNumber: invoice.revisionNumber,
+          action: 'SOFT_DELETED',
+          changedBy: deletedBy,
+          changeReason: reason,
+          diffSummary: JSON.stringify([
+            { field: 'Status', oldVal: 'Active', newVal: 'Recently Deleted (7-day recovery)' },
+            { field: 'Deletion Reason', oldVal: '-', newVal: reason },
+          ]),
+          previousSnapshot,
+          newSnapshot: JSON.stringify(updated),
+        },
+      });
 
-    return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 });
+      return updated;
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Invoice moved to Recently Deleted. It can be recovered for 7 days.',
+      data: deleted,
+    });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
 /**
- * Explicit revision handler: Disallow silent modifications.
- * Any update must provide an explicit revision reason and audit trail.
+ * PUT /api/invoices/[id]
+ * Full audited invoice edit with stock reconciliation and diff logging.
  */
 export async function PUT(
   request: Request,
@@ -210,67 +175,386 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { revisionReason, changedBy, ...updates } = body;
+    const {
+      customerId,
+      date,
+      dueDate,
+      items,
+      subtotal,
+      discountPercent,
+      discountAmount,
+      taxableAmount,
+      cgst,
+      sgst,
+      igst,
+      grandTotal,
+      paidAmount,
+      paymentMode,
+      notes,
+      terms,
+      revisionReason,
+      changedBy = 'admin',
+    } = body;
 
-    if (!revisionReason || typeof revisionReason !== 'string' || !revisionReason.trim()) {
+    if (!revisionReason || !revisionReason.trim()) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Direct silent modification of finalized invoices is prohibited. You must provide a revisionReason for the historical audit trail.',
+          error: 'A revision reason is mandatory to edit an invoice for audit compliance.',
         },
         { status: 400 }
       );
     }
 
-    const invoice = await db.invoice.findUnique({
+    const existingInvoice = await db.invoice.findUnique({
       where: { id },
-      include: { items: true, customer: true },
+      include: {
+        items: { include: { product: true } },
+        serialNumbers: true,
+        customer: true,
+      },
     });
 
-    if (!invoice) {
+    if (!existingInvoice) {
       return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 });
     }
 
-    const nextRev = (invoice.revisionNumber || 1) + 1;
-    const prevSnapshot = JSON.stringify(invoice);
+    if (existingInvoice.isDeleted) {
+      return NextResponse.json(
+        { success: false, error: 'Cannot edit an invoice that is in Recently Deleted. Please restore it first.' },
+        { status: 400 }
+      );
+    }
 
-    const revised = await db.$transaction(async (tx) => {
-      const updateData: any = {
-        revisionNumber: nextRev,
-        revisionReason: revisionReason.trim(),
-      };
+    const previousSnapshot = JSON.stringify(existingInvoice);
+    const nextRevision = (existingInvoice.revisionNumber || 1) + 1;
+    const invDate = date ? new Date(date) : existingInvoice.date;
 
-      if (updates.notes !== undefined) updateData.notes = updates.notes;
-      if (updates.terms !== undefined) updateData.terms = updates.terms;
-      if (updates.paymentMode !== undefined) updateData.paymentMode = updates.paymentMode;
-      if (updates.customerSnapshot !== undefined) {
-        updateData.customerSnapshot = typeof updates.customerSnapshot === 'string'
-          ? updates.customerSnapshot
-          : JSON.stringify(updates.customerSnapshot);
+    const editedInvoice = await db.$transaction(async (tx) => {
+      // 1. Fetch new customer if changed
+      let newCustomerSnapshot = existingInvoice.customerSnapshot;
+      const targetCustomerId = customerId || existingInvoice.customerId;
+      if (customerId && customerId !== existingInvoice.customerId) {
+        const cust = await tx.customer.findUnique({ where: { id: customerId } });
+        if (cust) {
+          newCustomerSnapshot = JSON.stringify({
+            id: cust.id,
+            name: cust.name,
+            phone: cust.phone,
+            email: cust.email,
+            address: cust.address,
+            gstin: cust.gstin,
+            state: cust.state,
+            stateCode: cust.stateCode,
+          });
+        }
       }
 
-      const updated = await tx.invoice.update({
-        where: { id },
-        data: updateData,
-      });
+      // 2. Reconcile physical inventory and serial numbers
+      if (Array.isArray(items) && items.length > 0) {
+        // Build map of old item quantities by productId
+        const oldPhysicalQtys = new Map<string, number>();
+        for (const oldIt of existingInvoice.items) {
+          const isService = oldIt.product?.productType === 'SERVICE' || oldIt.product?.category?.toLowerCase() === 'service';
+          if (!isService && oldIt.productId) {
+            oldPhysicalQtys.set(oldIt.productId, (oldPhysicalQtys.get(oldIt.productId) || 0) + oldIt.quantity);
+          }
+        }
 
-      await tx.invoiceRevisionAudit.create({
+        // Fetch product records for new items to check productType
+        const newProductIds = items.map((it: any) => it.productId).filter(Boolean);
+        const productRecords = await tx.product.findMany({
+          where: { id: { in: newProductIds } },
+        });
+        const productMap = new Map(productRecords.map((p) => [p.id, p]));
+
+        // Build map of new physical item quantities
+        const newPhysicalQtys = new Map<string, number>();
+        for (const newIt of items) {
+          const prod = productMap.get(newIt.productId);
+          const isService = prod?.productType === 'SERVICE' || prod?.category?.toLowerCase() === 'service';
+          if (!isService && newIt.productId) {
+            const qty = parseInt(newIt.quantity) || 1;
+            newPhysicalQtys.set(newIt.productId, (newPhysicalQtys.get(newIt.productId) || 0) + qty);
+          }
+        }
+
+        // All product IDs involved
+        const allProductIds = new Set([...oldPhysicalQtys.keys(), ...newPhysicalQtys.keys()]);
+        for (const prodId of allProductIds) {
+          const oldQty = oldPhysicalQtys.get(prodId) || 0;
+          const newQty = newPhysicalQtys.get(prodId) || 0;
+          const diff = newQty - oldQty; // if > 0: need to decrement more; if < 0: return stock
+
+          if (diff > 0) {
+            // Sold more units
+            const updated = await tx.product.update({
+              where: { id: prodId },
+              data: { currentStock: { decrement: diff } },
+            });
+            await tx.stockMovement.create({
+              data: {
+                productId: prodId,
+                date: invDate,
+                type: 'SALE',
+                referenceType: 'INVOICE_EDIT',
+                referenceId: existingInvoice.id,
+                referenceNumber: existingInvoice.invoiceNumber,
+                quantityChange: -diff,
+                balanceAfter: updated.currentStock,
+                notes: `Stock reduced by ${diff} on Invoice ${existingInvoice.invoiceNumber} edit`,
+              },
+            });
+          } else if (diff < 0) {
+            // Returned units to stock
+            const returnQty = Math.abs(diff);
+            const updated = await tx.product.update({
+              where: { id: prodId },
+              data: { currentStock: { increment: returnQty } },
+            });
+            await tx.stockMovement.create({
+              data: {
+                productId: prodId,
+                date: invDate,
+                type: 'RETURN_CUSTOMER',
+                referenceType: 'INVOICE_EDIT',
+                referenceId: existingInvoice.id,
+                referenceNumber: existingInvoice.invoiceNumber,
+                quantityChange: returnQty,
+                balanceAfter: updated.currentStock,
+                notes: `Stock returned by ${returnQty} on Invoice ${existingInvoice.invoiceNumber} edit`,
+              },
+            });
+          }
+        }
+
+        // Delete old items and insert updated items
+        await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+
+        await tx.invoiceItem.createMany({
+          data: items.map((it: any) => {
+            const prod = productMap.get(it.productId);
+            const prodName = prod?.name || it.description || 'Item';
+            const warranty = prod?.warranty || it.warranty || '6 Months';
+            const rate = parseFloat(it.rate) || 0;
+            const disc = parseFloat(it.discount) || 0;
+            const gstPct = parseFloat(it.gstPercent) || 18;
+            const taxable = parseFloat(it.taxableAmount) || 0;
+            const gst = parseFloat(it.gstAmount) || 0;
+            const itemTotal = parseFloat(it.total) || 0;
+            const hsn = it.hsn || prod?.hsn || '8471';
+            const qty = parseInt(it.quantity) || 1;
+            const unit = it.unit || 'Pcs';
+
+            return {
+              invoiceId: id,
+              productId: it.productId,
+              productName: prodName,
+              warranty,
+              serialNumber: it.serialNumber || null,
+              description: it.description || prodName || null,
+              hsn,
+              quantity: qty,
+              unit,
+              rate,
+              discount: disc,
+              gstPercent: gstPct,
+              taxableAmount: taxable,
+              gstAmount: gst,
+              total: itemTotal,
+              itemSnapshot: JSON.stringify({
+                productId: it.productId,
+                productName: prodName,
+                brand: prod?.brand,
+                model: prod?.model,
+                hsn,
+                warranty,
+                serialNumber: it.serialNumber || null,
+                quantity: qty,
+                unit,
+                rate,
+                discount: disc,
+                gstPercent: gstPct,
+                taxableAmount: taxable,
+                gstAmount: gst,
+                total: itemTotal,
+              }),
+            };
+          }),
+        });
+      }
+
+      // 3. Recalculate financial totals
+      const newGrandTotal = grandTotal !== undefined ? parseFloat(grandTotal) : existingInvoice.grandTotal;
+      const newPaidAmount = paidAmount !== undefined ? parseFloat(paidAmount) : existingInvoice.paidAmount;
+      const newBalanceDue = Math.max(0, newGrandTotal - newPaidAmount);
+      let newPaymentStatus = 'Paid';
+      if (newPaidAmount <= 0) newPaymentStatus = 'Unpaid';
+      else if (newPaidAmount < newGrandTotal) newPaymentStatus = 'Partial';
+
+      // Reconcile customer outstanding balance
+      const balanceDifference = newBalanceDue - existingInvoice.balanceDue;
+      if (balanceDifference !== 0) {
+        await tx.customer.update({
+          where: { id: targetCustomerId },
+          data: { currentBalance: { increment: balanceDifference } },
+        });
+      }
+
+      // 4. Update the invoice record
+      const updatedInvoice = await tx.invoice.update({
+        where: { id },
         data: {
-          invoiceId: id,
-          revisionNumber: nextRev,
-          action: 'REVISED',
-          changedBy: changedBy || 'admin',
-          changeReason: revisionReason.trim(),
-          previousSnapshot: prevSnapshot,
-          newSnapshot: JSON.stringify(updated),
+          customerId: targetCustomerId,
+          date: invDate,
+          dueDate: dueDate ? new Date(dueDate) : existingInvoice.dueDate,
+          subtotal: subtotal !== undefined ? parseFloat(subtotal) : existingInvoice.subtotal,
+          discountPercent: discountPercent !== undefined ? parseFloat(discountPercent) : existingInvoice.discountPercent,
+          discountAmount: discountAmount !== undefined ? parseFloat(discountAmount) : existingInvoice.discountAmount,
+          taxableAmount: taxableAmount !== undefined ? parseFloat(taxableAmount) : existingInvoice.taxableAmount,
+          cgst: cgst !== undefined ? parseFloat(cgst) : existingInvoice.cgst,
+          sgst: sgst !== undefined ? parseFloat(sgst) : existingInvoice.sgst,
+          igst: igst !== undefined ? parseFloat(igst) : existingInvoice.igst,
+          grandTotal: newGrandTotal,
+          finalTotal: newGrandTotal,
+          paidAmount: newPaidAmount,
+          balanceDue: newBalanceDue,
+          paymentStatus: newPaymentStatus,
+          paymentMode: paymentMode || existingInvoice.paymentMode,
+          notes: notes !== undefined ? notes : existingInvoice.notes,
+          terms: terms !== undefined ? terms : existingInvoice.terms,
+          revisionNumber: nextRevision,
+          revisionReason: revisionReason.trim(),
+          customerSnapshot: newCustomerSnapshot,
+        },
+        include: {
+          customer: true,
+          items: { include: { product: true } },
         },
       });
 
-      return updated;
+      // 5. Generate structured before/after diff summary
+      const diffSummaryList: { field: string; oldVal: string; newVal: string }[] = [];
+      
+      // Customer diff
+      let oldCustObj: any = existingInvoice.customer;
+      if (existingInvoice.customerSnapshot) {
+        try {
+          oldCustObj = typeof existingInvoice.customerSnapshot === 'string'
+            ? JSON.parse(existingInvoice.customerSnapshot)
+            : existingInvoice.customerSnapshot;
+        } catch {}
+      }
+      const newCustObj = updatedInvoice.customer;
+      if (newCustObj && oldCustObj?.phone !== newCustObj.phone) {
+        diffSummaryList.push({
+          field: 'Customer Phone',
+          oldVal: oldCustObj?.phone || '-',
+          newVal: newCustObj.phone || '-',
+        });
+      }
+      if (existingInvoice.customerId !== targetCustomerId) {
+        diffSummaryList.push({
+          field: 'Customer Name',
+          oldVal: existingInvoice.customer?.name || 'Previous Customer',
+          newVal: updatedInvoice.customer?.name || 'New Customer',
+        });
+      }
+
+      // Date diff
+      if (new Date(existingInvoice.date).toISOString().split('T')[0] !== invDate.toISOString().split('T')[0]) {
+        diffSummaryList.push({
+          field: 'Invoice Date',
+          oldVal: new Date(existingInvoice.date).toLocaleDateString('en-IN'),
+          newVal: invDate.toLocaleDateString('en-IN'),
+        });
+      }
+
+      // Item level selling price and discount diff
+      if (existingInvoice.items.length === 1 && updatedInvoice.items.length === 1) {
+        const oldIt = existingInvoice.items[0];
+        const newIt = updatedInvoice.items[0];
+        if (oldIt.rate !== newIt.rate) {
+          diffSummaryList.push({
+            field: 'Selling Price',
+            oldVal: `₹${oldIt.rate.toLocaleString('en-IN')}`,
+            newVal: `₹${newIt.rate.toLocaleString('en-IN')}`,
+          });
+        }
+        if (oldIt.discount !== newIt.discount) {
+          diffSummaryList.push({
+            field: 'Discount',
+            oldVal: `₹${oldIt.discount.toLocaleString('en-IN')}`,
+            newVal: `₹${newIt.discount.toLocaleString('en-IN')}`,
+          });
+        }
+      } else if (existingInvoice.discountAmount !== (discountAmount !== undefined ? parseFloat(discountAmount) : existingInvoice.discountAmount)) {
+        diffSummaryList.push({
+          field: 'Discount Amount',
+          oldVal: `₹${existingInvoice.discountAmount.toLocaleString('en-IN')}`,
+          newVal: `₹${parseFloat(discountAmount).toLocaleString('en-IN')}`,
+        });
+      }
+
+      // Grand total diff
+      if (existingInvoice.grandTotal !== newGrandTotal) {
+        diffSummaryList.push({
+          field: 'Grand Total',
+          oldVal: `₹${existingInvoice.grandTotal.toLocaleString('en-IN')}`,
+          newVal: `₹${newGrandTotal.toLocaleString('en-IN')}`,
+        });
+      }
+
+      // Payment diffs
+      if (existingInvoice.paymentMode !== updatedInvoice.paymentMode) {
+        diffSummaryList.push({
+          field: 'Payment Mode',
+          oldVal: existingInvoice.paymentMode,
+          newVal: updatedInvoice.paymentMode,
+        });
+      }
+      if (existingInvoice.paidAmount !== newPaidAmount) {
+        diffSummaryList.push({
+          field: 'Paid Amount',
+          oldVal: `₹${existingInvoice.paidAmount.toLocaleString('en-IN')}`,
+          newVal: `₹${newPaidAmount.toLocaleString('en-IN')}`,
+        });
+      }
+      if (existingInvoice.balanceDue !== newBalanceDue) {
+        diffSummaryList.push({
+          field: 'Balance Due',
+          oldVal: `₹${existingInvoice.balanceDue.toLocaleString('en-IN')}`,
+          newVal: `₹${newBalanceDue.toLocaleString('en-IN')}`,
+        });
+      }
+      if (existingInvoice.items.length !== updatedInvoice.items.length) {
+        diffSummaryList.push({
+          field: 'Items Count',
+          oldVal: `${existingInvoice.items.length} items`,
+          newVal: `${updatedInvoice.items.length} items`,
+        });
+      }
+
+      // Record audit entry
+      await tx.invoiceRevisionAudit.create({
+        data: {
+          invoiceId: id,
+          revisionNumber: nextRevision,
+          action: 'EDITED',
+          changedBy,
+          changeReason: revisionReason.trim(),
+          diffSummary: JSON.stringify(diffSummaryList),
+          previousSnapshot,
+          newSnapshot: JSON.stringify(updatedInvoice),
+        },
+      });
+
+      return updatedInvoice;
     });
 
-    return NextResponse.json({ success: true, data: revised });
+    return NextResponse.json({ success: true, data: editedInvoice });
   } catch (error: any) {
+    console.error('Invoice Edit Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

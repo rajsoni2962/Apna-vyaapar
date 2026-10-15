@@ -37,8 +37,13 @@ export default function LowStockPage() {
       const res = await fetch('/api/products');
       const data = await res.json();
       if (data.success && data.data) {
-        // filter for low stock: currentStock <= minStock
-        const low = data.data.filter((p: any) => p.currentStock <= (p.minStock ?? p.minimumStock ?? 1));
+        // filter for low stock: physical products only where currentStock <= minStock
+        const low = data.data.filter(
+          (p: any) =>
+            p.productType !== 'SERVICE' &&
+            p.category?.toLowerCase() !== 'service' &&
+            p.currentStock <= (p.minStock ?? p.minimumStock ?? 1)
+        );
         setProducts(low);
       }
     } catch (err) {

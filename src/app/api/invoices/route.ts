@@ -8,12 +8,18 @@ export async function GET(request: Request) {
     const customerId = searchParams.get('customerId') || '';
     const status = searchParams.get('status') || '';
 
+    const includeDeleted = searchParams.get('includeDeleted') === 'true';
+
     const where: any = {};
+    if (!includeDeleted) {
+      where.isDeleted = false;
+    }
+
     if (search) {
       where.OR = [
-        { invoiceNumber: { contains: search } },
-        { customer: { name: { contains: search } } },
-        { customer: { phone: { contains: search } } },
+        { invoiceNumber: { contains: search, mode: 'insensitive' } },
+        { customer: { name: { contains: search, mode: 'insensitive' } } },
+        { customer: { phone: { contains: search, mode: 'insensitive' } } },
       ];
     }
     if (customerId) where.customerId = customerId;
@@ -239,55 +245,61 @@ export async function POST(request: Request) {
         },
       });
 
-      // 3. For each item: decrease stock, record stock movement, update serial number
+      // 3. For each item: decrease stock, record stock movement, update serial number (PHYSICAL PRODUCTS ONLY)
       for (const it of items) {
-        const qty = parseInt(it.quantity) || 1;
-        const prod = await tx.product.update({
-          where: { id: it.productId },
-          data: {
-            currentStock: { decrement: qty },
-          },
-        });
+        const prod = productMap.get(it.productId);
+        const isService = prod?.productType === 'SERVICE' || prod?.category?.toLowerCase() === 'service';
 
-        // Record stock movement
-        await tx.stockMovement.create({
-          data: {
-            productId: it.productId,
-            date: invDate,
-            type: 'SALE',
-            referenceType: 'INVOICE',
-            referenceId: invoice.id,
-            referenceNumber: invoice.invoiceNumber,
-            quantityChange: -qty,
-            balanceAfter: prod.currentStock,
-            unitPrice: parseFloat(it.rate) || 0,
-            notes: `Sale on Invoice ${invoice.invoiceNumber} ${it.serialNumber ? `(SN: ${it.serialNumber})` : ''}`,
-          },
-        });
-
-        // If specific serial number selected, mark it sold
-        if (it.serialNumber) {
-          const snRecord = await tx.serialNumber.findFirst({
-            where: { serialNumber: it.serialNumber },
+        // SERVICES MUST NOT HAVE STOCK UNITS OR CREATE STOCK MOVEMENTS
+        if (!isService) {
+          const qty = parseInt(it.quantity) || 1;
+          const updatedProd = await tx.product.update({
+            where: { id: it.productId },
+            data: {
+              currentStock: { decrement: qty },
+            },
           });
 
-          if (snRecord) {
-            const warStart = invDate;
-            const warEnd = new Date(invDate);
-            warEnd.setMonth(warEnd.getMonth() + 6); // default 6 months warranty
+          // Record stock movement for physical items
+          await tx.stockMovement.create({
+            data: {
+              productId: it.productId,
+              date: invDate,
+              type: 'SALE',
+              referenceType: 'INVOICE',
+              referenceId: invoice.id,
+              referenceNumber: invoice.invoiceNumber,
+              quantityChange: -qty,
+              balanceAfter: updatedProd.currentStock,
+              unitPrice: parseFloat(it.rate) || 0,
+              notes: `Sale on Invoice ${invoice.invoiceNumber} ${it.serialNumber ? `(SN: ${it.serialNumber})` : ''}`,
+            },
+          });
 
-            await tx.serialNumber.update({
-              where: { id: snRecord.id },
-              data: {
-                status: 'Sold',
-                customerId,
-                salesInvoiceId: invoice.id,
-                saleDate: invDate,
-                sellingPrice: parseFloat(it.rate) || prod.sellingPrice,
-                warrantyStart: warStart,
-                warrantyEnd: warEnd,
-              },
+          // If specific serial number selected, mark it sold
+          if (it.serialNumber) {
+            const snRecord = await tx.serialNumber.findFirst({
+              where: { serialNumber: it.serialNumber },
             });
+
+            if (snRecord) {
+              const warStart = invDate;
+              const warEnd = new Date(invDate);
+              warEnd.setMonth(warEnd.getMonth() + 6); // default 6 months warranty
+
+              await tx.serialNumber.update({
+                where: { id: snRecord.id },
+                data: {
+                  status: 'Sold',
+                  customerId,
+                  salesInvoiceId: invoice.id,
+                  saleDate: invDate,
+                  sellingPrice: parseFloat(it.rate) || prod?.sellingPrice || 0,
+                  warrantyStart: warStart,
+                  warrantyEnd: warEnd,
+                },
+              });
+            }
           }
         }
       }

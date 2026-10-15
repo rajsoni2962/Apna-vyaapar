@@ -38,30 +38,40 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
+    const isService = body.productType === 'SERVICE' || body.category?.toLowerCase() === 'service';
+    const finalProductType = isService ? 'SERVICE' : (body.productType || 'PHYSICAL');
+
+    const updateData: any = {
+      name: body.name?.trim(),
+      productType: finalProductType,
+      brand: isService ? null : (body.brand || null),
+      model: isService ? null : (body.model || null),
+      category: body.category || (isService ? 'Service' : 'Laptop'),
+      cpu: isService ? null : (body.cpu || null),
+      generation: isService ? null : (body.generation || null),
+      ram: isService ? null : (body.ram || null),
+      ramType: isService ? null : (body.ramType || null),
+      storage: isService ? null : (body.storage || null),
+      storageType: isService ? null : (body.storageType || null),
+      gpu: isService ? null : (body.gpu || null),
+      displaySize: isService ? null : (body.displaySize || null),
+      condition: isService ? 'Service' : (body.condition || 'Refurbished Grade A'),
+      hsn: body.hsn || (isService ? '9987' : '8471'),
+      gstPercent: parseFloat(body.gstPercent) !== undefined ? parseFloat(body.gstPercent) : 18,
+      purchasePrice: parseFloat(body.purchasePrice) || 0,
+      sellingPrice: parseFloat(body.sellingPrice) || 0,
+      minStock: isService ? 0 : (parseInt(body.minStock) || 1),
+      warranty: body.warranty || (isService ? '30 Days Service Warranty' : '6 Months'),
+      notes: body.notes || null,
+    };
+
+    if (isService) {
+      updateData.currentStock = 0;
+    }
+
     const updated = await db.product.update({
       where: { id },
-      data: {
-        name: body.name,
-        brand: body.brand || null,
-        model: body.model || null,
-        category: body.category,
-        cpu: body.cpu || null,
-        generation: body.generation || null,
-        ram: body.ram || null,
-        ramType: body.ramType || null,
-        storage: body.storage || null,
-        storageType: body.storageType || null,
-        gpu: body.gpu || null,
-        displaySize: body.displaySize || null,
-        condition: body.condition,
-        hsn: body.hsn,
-        gstPercent: parseFloat(body.gstPercent) || 18,
-        purchasePrice: parseFloat(body.purchasePrice) || 0,
-        sellingPrice: parseFloat(body.sellingPrice) || 0,
-        minStock: parseInt(body.minStock) || 1,
-        warranty: body.warranty || null,
-        notes: body.notes || null,
-      },
+      data: updateData,
     });
 
     return NextResponse.json({ success: true, data: updated });
