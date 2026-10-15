@@ -127,10 +127,10 @@ export async function generateInvoicePdf(
   let logoBase64 = options.logoBase64;
   let signatureBase64 = options.signatureBase64;
 
-  if (!logoBase64 && typeof process !== 'undefined' && process.cwd) {
+  if (!logoBase64 && typeof window === 'undefined') {
     try {
-      const fs = require('fs');
-      const path = require('path');
+      const fs = eval('require')('fs');
+      const path = eval('require')('path');
       const pngPath = path.join(process.cwd(), 'public/brand/logo.png');
       const jpegPath = path.join(process.cwd(), 'public/brand/logo.jpeg');
       const logoPath = fs.existsSync(pngPath) ? pngPath : jpegPath;
@@ -152,10 +152,10 @@ export async function generateInvoicePdf(
     } catch (e) {}
   }
 
-  if (!signatureBase64 && typeof process !== 'undefined' && process.cwd) {
+  if (!signatureBase64 && typeof window === 'undefined') {
     try {
-      const fs = require('fs');
-      const path = require('path');
+      const fs = eval('require')('fs');
+      const path = eval('require')('path');
       const sigPath = path.join(process.cwd(), 'public/brand/signature.jpeg');
       if (fs.existsSync(sigPath)) {
         signatureBase64 = fs.readFileSync(sigPath).toString('base64');

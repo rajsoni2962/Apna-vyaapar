@@ -52,6 +52,7 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
 * Battery backup may vary depending on usage.
 * No return or refund after sale unless covered under warranty.
 * Thank you for choosing us—we’re always here to help if you need support.`,
+    footer: bizSnapshot.footer || settings?.footer || "Thank you for choosing us—we're always here to help if you need support.",
     authorizedSignatory: bizSnapshot.authorizedSignatory || settings?.authorizedSignatory || 'Ashirwad Technologies\nRaj Soni\nProprietor',
   };
 
