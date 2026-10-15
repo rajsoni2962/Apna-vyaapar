@@ -470,7 +470,7 @@ export async function PUT(
         });
       }
 
-      // Item level selling price and discount diff
+      // Item level selling price, quantity, and discount diffs
       if (existingInvoice.items.length === 1 && updatedInvoice.items.length === 1) {
         const oldIt = existingInvoice.items[0];
         const newIt = updatedInvoice.items[0];
@@ -488,7 +488,62 @@ export async function PUT(
             newVal: `₹${newIt.discount.toLocaleString('en-IN')}`,
           });
         }
-      } else if (existingInvoice.discountAmount !== (discountAmount !== undefined ? parseFloat(discountAmount) : existingInvoice.discountAmount)) {
+        if (oldIt.quantity !== newIt.quantity) {
+          diffSummaryList.push({
+            field: 'Quantity',
+            oldVal: `${oldIt.quantity}`,
+            newVal: `${newIt.quantity}`,
+          });
+        }
+      } else {
+        // Multi-item diffing: track modifications, additions, and removals
+        updatedInvoice.items.forEach((newIt, idx) => {
+          const oldIt = existingInvoice.items[idx];
+          const name = newIt.productName || newIt.description || `Item #${idx + 1}`;
+          if (oldIt) {
+            if (oldIt.rate !== newIt.rate) {
+              diffSummaryList.push({
+                field: `Selling Price (${name})`,
+                oldVal: `₹${oldIt.rate.toLocaleString('en-IN')}`,
+                newVal: `₹${newIt.rate.toLocaleString('en-IN')}`,
+              });
+            }
+            if (oldIt.quantity !== newIt.quantity) {
+              diffSummaryList.push({
+                field: `Quantity (${name})`,
+                oldVal: `${oldIt.quantity}`,
+                newVal: `${newIt.quantity}`,
+              });
+            }
+            if (oldIt.discount !== newIt.discount) {
+              diffSummaryList.push({
+                field: `Discount (${name})`,
+                oldVal: `₹${oldIt.discount.toLocaleString('en-IN')}`,
+                newVal: `₹${newIt.discount.toLocaleString('en-IN')}`,
+              });
+            }
+          } else {
+            diffSummaryList.push({
+              field: 'Item Added',
+              oldVal: '-',
+              newVal: `${name} (Qty: ${newIt.quantity}, Rate: ₹${newIt.rate.toLocaleString('en-IN')})`,
+            });
+          }
+        });
+
+        if (existingInvoice.items.length > updatedInvoice.items.length) {
+          for (let i = updatedInvoice.items.length; i < existingInvoice.items.length; i++) {
+            const removed = existingInvoice.items[i];
+            diffSummaryList.push({
+              field: 'Item Removed',
+              oldVal: removed.productName || removed.description || `Item #${i + 1}`,
+              newVal: '-',
+            });
+          }
+        }
+      }
+
+      if (discountAmount !== undefined && existingInvoice.discountAmount !== parseFloat(discountAmount)) {
         diffSummaryList.push({
           field: 'Discount Amount',
           oldVal: `₹${existingInvoice.discountAmount.toLocaleString('en-IN')}`,
