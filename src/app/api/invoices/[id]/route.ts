@@ -72,8 +72,8 @@ export async function DELETE(
     const previousSnapshot = JSON.stringify(invoice);
 
     const deleted = await db.$transaction(async (tx) => {
-      // 1. If invoice was Confirmed, restore physical stock and serials
-      if (invoice.status === 'Confirmed') {
+      // 1. If invoice was Confirmed and NOT a Quotation, restore physical stock and serials
+      if (invoice.status === 'Confirmed' && invoice.invoiceType !== 'QUOTATION') {
         for (const it of invoice.items) {
           const isService = it.product?.productType === 'SERVICE' || it.product?.category?.toLowerCase() === 'service';
           if (!isService && it.productId) {
@@ -179,6 +179,8 @@ export async function PUT(
       customerId,
       date,
       dueDate,
+      invoiceType,
+      taxConfiguration,
       items,
       subtotal,
       discountPercent,
@@ -250,14 +252,19 @@ export async function PUT(
         }
       }
 
+      const targetInvoiceType = invoiceType || existingInvoice.invoiceType || 'TAX_INVOICE';
+      const targetTaxConfig = taxConfiguration || existingInvoice.taxConfiguration || 'CGST_SGST';
+
       // 2. Reconcile physical inventory and serial numbers
       if (Array.isArray(items) && items.length > 0) {
-        // Build map of old item quantities by productId
+        // Build map of old item quantities by productId (only if old invoice was NOT a Quotation)
         const oldPhysicalQtys = new Map<string, number>();
-        for (const oldIt of existingInvoice.items) {
-          const isService = oldIt.product?.productType === 'SERVICE' || oldIt.product?.category?.toLowerCase() === 'service';
-          if (!isService && oldIt.productId) {
-            oldPhysicalQtys.set(oldIt.productId, (oldPhysicalQtys.get(oldIt.productId) || 0) + oldIt.quantity);
+        if (existingInvoice.invoiceType !== 'QUOTATION') {
+          for (const oldIt of existingInvoice.items) {
+            const isService = oldIt.product?.productType === 'SERVICE' || oldIt.product?.category?.toLowerCase() === 'service';
+            if (!isService && oldIt.productId) {
+              oldPhysicalQtys.set(oldIt.productId, (oldPhysicalQtys.get(oldIt.productId) || 0) + oldIt.quantity);
+            }
           }
         }
 
@@ -268,14 +275,16 @@ export async function PUT(
         });
         const productMap = new Map(productRecords.map((p) => [p.id, p]));
 
-        // Build map of new physical item quantities
+        // Build map of new physical item quantities (only if target invoice is NOT a Quotation)
         const newPhysicalQtys = new Map<string, number>();
-        for (const newIt of items) {
-          const prod = productMap.get(newIt.productId);
-          const isService = prod?.productType === 'SERVICE' || prod?.category?.toLowerCase() === 'service';
-          if (!isService && newIt.productId) {
-            const qty = parseInt(newIt.quantity) || 1;
-            newPhysicalQtys.set(newIt.productId, (newPhysicalQtys.get(newIt.productId) || 0) + qty);
+        if (targetInvoiceType !== 'QUOTATION') {
+          for (const newIt of items) {
+            const prod = productMap.get(newIt.productId);
+            const isService = prod?.productType === 'SERVICE' || prod?.category?.toLowerCase() === 'service';
+            if (!isService && newIt.productId) {
+              const qty = parseInt(newIt.quantity) || 1;
+              newPhysicalQtys.set(newIt.productId, (newPhysicalQtys.get(newIt.productId) || 0) + qty);
+            }
           }
         }
 
@@ -393,7 +402,9 @@ export async function PUT(
       else if (newPaidAmount < newGrandTotal) newPaymentStatus = 'Partial';
 
       // Reconcile customer outstanding balance
-      const balanceDifference = newBalanceDue - existingInvoice.balanceDue;
+      const effectiveOldDue = existingInvoice.invoiceType === 'QUOTATION' ? 0 : existingInvoice.balanceDue;
+      const effectiveNewDue = targetInvoiceType === 'QUOTATION' ? 0 : newBalanceDue;
+      const balanceDifference = effectiveNewDue - effectiveOldDue;
       if (balanceDifference !== 0) {
         await tx.customer.update({
           where: { id: targetCustomerId },
@@ -423,6 +434,8 @@ export async function PUT(
           paymentMode: paymentMode || existingInvoice.paymentMode,
           notes: notes !== undefined ? notes : existingInvoice.notes,
           terms: terms !== undefined ? terms : existingInvoice.terms,
+          invoiceType: targetInvoiceType,
+          taxConfiguration: targetTaxConfig,
           revisionNumber: nextRevision,
           revisionReason: revisionReason.trim(),
           customerSnapshot: newCustomerSnapshot,
@@ -467,6 +480,24 @@ export async function PUT(
           field: 'Invoice Date',
           oldVal: new Date(existingInvoice.date).toLocaleDateString('en-IN'),
           newVal: invDate.toLocaleDateString('en-IN'),
+        });
+      }
+
+      // Invoice Type diff
+      if (targetInvoiceType !== (existingInvoice.invoiceType || 'TAX_INVOICE')) {
+        diffSummaryList.push({
+          field: 'Invoice Type',
+          oldVal: existingInvoice.invoiceType || 'TAX_INVOICE',
+          newVal: targetInvoiceType,
+        });
+      }
+
+      // Tax Configuration diff
+      if (targetTaxConfig !== (existingInvoice.taxConfiguration || 'CGST_SGST')) {
+        diffSummaryList.push({
+          field: 'Tax Configuration',
+          oldVal: existingInvoice.taxConfiguration || 'CGST_SGST',
+          newVal: targetTaxConfig,
         });
       }
 

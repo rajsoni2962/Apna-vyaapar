@@ -19,7 +19,7 @@ import {
   Download,
   Wrench,
 } from 'lucide-react';
-import { formatCurrency, numberToWords } from '@/lib/utils';
+import { formatCurrency, numberToWords, getInvoiceTypeTitle, getTaxConfigLabel } from '@/lib/utils';
 import Link from 'next/link';
 import WhatsAppShareModal from '@/components/invoice/WhatsAppShareModal';
 import CustomerSearchSelect from '@/components/common/CustomerSearchSelect';
@@ -33,6 +33,10 @@ export default function NewSalesInvoicePage() {
   const [products, setProducts] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>(null);
 
+  // Document Type & Tax Configuration
+  const [invoiceType, setInvoiceType] = useState('TAX_INVOICE');
+  const [taxConfiguration, setTaxConfiguration] = useState('CGST_SGST');
+
   // Form State
   const [customerId, setCustomerId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -42,6 +46,39 @@ export default function NewSalesInvoicePage() {
   const [paymentReference, setPaymentReference] = useState('');
   const [notes, setNotes] = useState('Professionally refurbished, fully tested, and ready to use. Clean, reliable, and backed by quality service.');
   const [terms, setTerms] = useState('');
+
+  const isNoTax = invoiceType === 'BILL_OF_SUPPLY' || invoiceType === 'NON_GST' || taxConfiguration === 'NONE';
+  const isExempt = taxConfiguration === 'EXEMPT';
+  const isIgst = taxConfiguration === 'IGST';
+
+  const handleInvoiceTypeChange = (newType: string) => {
+    setInvoiceType(newType);
+    if (newType === 'BILL_OF_SUPPLY' || newType === 'NON_GST') {
+      setTaxConfiguration('NONE');
+    } else if (newType === 'CASH_MEMO') {
+      setPaymentMode('Cash');
+    } else if (taxConfiguration === 'NONE') {
+      setTaxConfiguration('CGST_SGST');
+    }
+  };
+
+  const handleCustomerSelect = (cust: any) => {
+    setCustomerId(cust?.id || '');
+    if (cust && !customers.some((c) => c.id === cust.id)) {
+      setCustomers((prev) => [...prev, cust]);
+    }
+    // Auto-detect inter-state vs intra-state
+    if (invoiceType !== 'BILL_OF_SUPPLY' && invoiceType !== 'NON_GST' && taxConfiguration !== 'NONE' && taxConfiguration !== 'EXEMPT') {
+      const stateCode = cust?.stateCode?.trim();
+      const stateName = cust?.state?.trim().toLowerCase();
+      const isInterstate = (stateCode && stateCode !== '24') || (stateName && stateName !== 'gujarat');
+      if (isInterstate) {
+        setTaxConfiguration('IGST');
+      } else if (taxConfiguration === 'IGST') {
+        setTaxConfiguration('CGST_SGST');
+      }
+    }
+  };
 
   // Items
   const [items, setItems] = useState<any[]>([
@@ -136,9 +173,14 @@ export default function NewSalesInvoicePage() {
     item.availableSerials = isService ? [] : (prod.serialNumbers || []);
 
     const qty = item.quantity || 1;
+    const effectiveGst = (isNoTax || isExempt) ? 0 : (item.gstPercent || 18);
     const baseAmount = Math.max(0, qty * item.rate - (item.discount || 0));
-    const taxable = round2(baseAmount / (1 + item.gstPercent / 100));
-    const gstAmt = round2(baseAmount - taxable);
+    let taxable = baseAmount;
+    let gstAmt = 0;
+    if (!isNoTax && !isExempt && effectiveGst > 0) {
+      taxable = round2(baseAmount / (1 + effectiveGst / 100));
+      gstAmt = round2(baseAmount - taxable);
+    }
 
     item.taxableAmount = taxable;
     item.gstAmount = gstAmt;
@@ -155,11 +197,15 @@ export default function NewSalesInvoicePage() {
     const qty = parseFloat(it.quantity) || 1;
     const rate = parseFloat(it.rate) || 0;
     const disc = parseFloat(it.discount) || 0;
-    const gstPct = parseFloat(it.gstPercent) || 18;
+    const effectiveGst = (isNoTax || isExempt) ? 0 : (parseFloat(it.gstPercent) || 18);
 
     const baseAmount = Math.max(0, qty * rate - disc);
-    const taxable = round2(baseAmount / (1 + gstPct / 100));
-    const gstAmt = round2(baseAmount - taxable);
+    let taxable = baseAmount;
+    let gstAmt = 0;
+    if (!isNoTax && !isExempt && effectiveGst > 0) {
+      taxable = round2(baseAmount / (1 + effectiveGst / 100));
+      gstAmt = round2(baseAmount - taxable);
+    }
 
     it.taxableAmount = taxable;
     it.gstAmount = gstAmt;
@@ -233,10 +279,30 @@ export default function NewSalesInvoicePage() {
   const overallDiscountAmount = round2((rawSubtotal * discPct) / 100);
   const grandTotal = Math.max(0, round2(rawSubtotal - overallDiscountAmount));
 
-  const taxableTotal = round2(grandTotal / 1.18);
-  const totalGst = round2(grandTotal - taxableTotal);
-  const cgst = round2(totalGst / 2);
-  const sgst = round2(totalGst / 2);
+  let taxableTotal = 0;
+  let cgst = 0;
+  let sgst = 0;
+  let igst = 0;
+
+  if (!isNoTax && !isExempt) {
+    const totalItemTaxable = items.reduce((acc, it) => acc + (it.taxableAmount || 0), 0);
+    const totalItemGst = items.reduce((acc, it) => acc + (it.gstAmount || 0), 0);
+    const factor = rawSubtotal > 0 ? grandTotal / rawSubtotal : 1;
+    taxableTotal = round2(totalItemTaxable * factor);
+    const totalGst = round2(totalItemGst * factor);
+
+    if (isIgst) {
+      igst = totalGst;
+      cgst = 0;
+      sgst = 0;
+    } else {
+      cgst = round2(totalGst / 2);
+      sgst = round2(totalGst / 2);
+      igst = 0;
+    }
+  } else if (isExempt) {
+    taxableTotal = grandTotal;
+  }
 
   const numericPaid = paidAmount === '' ? grandTotal : parseFloat(paidAmount) || 0;
   const balanceDue = Math.max(0, round2(grandTotal - numericPaid));
@@ -258,13 +324,15 @@ export default function NewSalesInvoicePage() {
         customerId,
         date: new Date(date),
         dueDate: dueDate ? new Date(dueDate) : null,
+        invoiceType,
+        taxConfiguration,
         subtotal: rawSubtotal,
         discountPercent: discPct,
         discountAmount: overallDiscountAmount,
         taxableAmount: taxableTotal,
         cgst,
         sgst,
-        igst: 0,
+        igst,
         grandTotal,
         paidAmount: numericPaid,
         paymentMode,
@@ -280,7 +348,7 @@ export default function NewSalesInvoicePage() {
           unit: it.unit,
           rate: it.rate,
           discount: it.discount,
-          gstPercent: it.gstPercent,
+          gstPercent: (isNoTax || isExempt) ? 0 : it.gstPercent,
           taxableAmount: it.taxableAmount,
           gstAmount: it.gstAmount,
           total: it.total,
@@ -321,10 +389,16 @@ export default function NewSalesInvoicePage() {
           <div>
             <h1 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
               <ShoppingCart className="w-6 h-6 text-indigo-600" />
-              <span>New Sales Tax Invoice</span>
+              <span>{getInvoiceTypeTitle(invoiceType)}</span>
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Create official customer invoice • Select serialized laptop • Automatic GST & stock deduction
+              {invoiceType === 'QUOTATION'
+                ? 'Create formal quotation / estimate • Does not deduct stock or affect ledger'
+                : invoiceType === 'BILL_OF_SUPPLY'
+                ? 'Bill of Supply • Composition / Nil-rated supply • No GST charged'
+                : invoiceType === 'NON_GST'
+                ? 'Non-GST Invoice • Unregistered goods & services • No tax breakdown'
+                : 'Official customer invoice • Select serialized laptop • Automatic stock & tax tracking'}
             </p>
           </div>
         </div>
@@ -335,7 +409,7 @@ export default function NewSalesInvoicePage() {
             className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl shadow-xs transition inline-flex items-center gap-2"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>Generate Tax Invoice</span>
+            <span>Generate {invoiceType === 'QUOTATION' ? 'Quotation' : invoiceType === 'CASH_MEMO' ? 'Cash Memo' : 'Invoice'}</span>
           </button>
         </div>
       </div>
@@ -343,6 +417,76 @@ export default function NewSalesInvoicePage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Main Invoice Form Column */}
         <div className="lg:col-span-8 space-y-6">
+          {/* Document Type & Tax Configuration Card */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                <FileText className="w-4 h-4 text-indigo-600" />
+                <span>Invoice Type & Tax Configuration</span>
+              </div>
+              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                {getInvoiceTypeTitle(invoiceType)}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Invoice Document Type <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={invoiceType}
+                  onChange={(e) => handleInvoiceTypeChange(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-semibold focus:outline-indigo-600 focus:bg-white"
+                >
+                  <option value="TAX_INVOICE">Tax Invoice (Standard GST Invoice)</option>
+                  <option value="BILL_OF_SUPPLY">Bill of Supply (Composition / Nil-rated / No Tax)</option>
+                  <option value="NON_GST">Non-GST Invoice (Unregistered / Non-taxable Goods)</option>
+                  <option value="PROFORMA">Proforma Invoice (Advance Estimate / Preliminary)</option>
+                  <option value="QUOTATION">Quotation / Estimate (Formal Quote - No Stock Decrement)</option>
+                  <option value="CASH_MEMO">Cash Memo (Direct Counter Cash Sale Receipt)</option>
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {invoiceType === 'QUOTATION'
+                    ? 'Quotations provide price estimates and do NOT decrement stock or affect customer balance.'
+                    : invoiceType === 'BILL_OF_SUPPLY' || invoiceType === 'NON_GST'
+                    ? 'Taxes cannot be charged on Bill of Supply or Non-GST invoices under GST law.'
+                    : invoiceType === 'CASH_MEMO'
+                    ? 'Counter cash memo for retail counter sales.'
+                    : 'Standard GST tax invoice for B2B or B2C transactions.'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Tax Configuration <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={taxConfiguration}
+                  onChange={(e) => setTaxConfiguration(e.target.value)}
+                  disabled={invoiceType === 'BILL_OF_SUPPLY' || invoiceType === 'NON_GST'}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-semibold focus:outline-indigo-600 focus:bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  <option value="CGST_SGST">CGST + SGST (Intra-State: 50% CGST / 50% SGST)</option>
+                  <option value="IGST">IGST (Inter-State: Integrated GST)</option>
+                  <option value="EXEMPT">Exempt / Nil-Rated (0% GST)</option>
+                  <option value="NONE">No GST / Non-Taxable</option>
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {invoiceType === 'BILL_OF_SUPPLY' || invoiceType === 'NON_GST'
+                    ? 'Locked to No GST / Non-Taxable for this invoice type.'
+                    : taxConfiguration === 'IGST'
+                    ? 'Inter-state transaction (outside Gujarat). 100% tax allocated to IGST.'
+                    : taxConfiguration === 'EXEMPT'
+                    ? 'Goods or services exempt from GST. Tax calculated as 0%.'
+                    : taxConfiguration === 'NONE'
+                    ? 'No tax will be applied or printed on this invoice.'
+                    : 'Intra-state transaction (within Gujarat). Tax split equally between CGST and SGST.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Customer Selection Card */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -367,12 +511,7 @@ export default function NewSalesInvoicePage() {
                 </label>
                 <CustomerSearchSelect
                   selectedCustomer={selectedCustomer || null}
-                  onSelectCustomer={(cust) => {
-                    setCustomerId(cust?.id || '');
-                    if (cust && !customers.some((c) => c.id === cust.id)) {
-                      setCustomers((prev) => [...prev, cust]);
-                    }
-                  }}
+                  onSelectCustomer={handleCustomerSelect}
                   onAddNewCustomer={() => setShowAddCustomerModal(true)}
                 />
               </div>
@@ -484,7 +623,7 @@ export default function NewSalesInvoicePage() {
                   </div>
 
                   {/* Quantity, Rate, Discount & Total */}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                  <div className={`grid grid-cols-2 ${isNoTax || isExempt ? 'sm:grid-cols-4' : 'sm:grid-cols-5'} gap-3 text-xs`}>
                     <div>
                       <label className="block text-slate-500 mb-1">Qty</label>
                       <input
@@ -519,20 +658,22 @@ export default function NewSalesInvoicePage() {
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-slate-500 mb-1">GST %</label>
-                      <select
-                        value={it.gstPercent}
-                        onChange={(e) => handleItemChange(idx, 'gstPercent', e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-800"
-                      >
-                        <option value="18">18%</option>
-                        <option value="12">12%</option>
-                        <option value="28">28%</option>
-                        <option value="5">5%</option>
-                        <option value="0">0%</option>
-                      </select>
-                    </div>
+                    {!isNoTax && !isExempt && (
+                      <div>
+                        <label className="block text-slate-500 mb-1">GST %</label>
+                        <select
+                          value={it.gstPercent}
+                          onChange={(e) => handleItemChange(idx, 'gstPercent', e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-800"
+                        >
+                          <option value="18">18%</option>
+                          <option value="12">12%</option>
+                          <option value="28">28%</option>
+                          <option value="5">5%</option>
+                          <option value="0">0%</option>
+                        </select>
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-slate-500 mb-1">Line Total</label>
@@ -603,18 +744,37 @@ export default function NewSalesInvoicePage() {
                     <span>- {formatCurrency(overallDiscountAmount)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-slate-600">
-                  <span>Taxable Value:</span>
-                  <span>{formatCurrency(taxableTotal)}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>CGST (9%):</span>
-                  <span>{formatCurrency(cgst)}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>SGST (9%):</span>
-                  <span>{formatCurrency(sgst)}</span>
-                </div>
+                {!isNoTax && !isExempt && (
+                  <>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Taxable Value:</span>
+                      <span>{formatCurrency(taxableTotal)}</span>
+                    </div>
+                    {isIgst ? (
+                      <div className="flex justify-between text-slate-600">
+                        <span>IGST (18%):</span>
+                        <span>{formatCurrency(igst)}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-slate-600">
+                          <span>CGST (9%):</span>
+                          <span>{formatCurrency(cgst)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span>SGST (9%):</span>
+                          <span>{formatCurrency(sgst)}</span>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+                {isExempt && (
+                  <div className="flex justify-between text-slate-500">
+                    <span>Tax (Exempt / Nil-Rated):</span>
+                    <span className="font-medium">₹0.00 (0%)</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t-2 border-slate-900">
                   <span>Grand Total:</span>
                   <span className="text-indigo-700">{formatCurrency(grandTotal)}</span>
@@ -685,7 +845,7 @@ export default function NewSalesInvoicePage() {
                 className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2 mt-4"
               >
                 <CheckCircle2 className="w-5 h-5" />
-                <span>Confirm & Generate Invoice</span>
+                <span>Confirm & Generate {invoiceType === 'QUOTATION' ? 'Quotation' : invoiceType === 'CASH_MEMO' ? 'Cash Memo' : 'Invoice'}</span>
               </button>
             </div>
           </div>
@@ -770,7 +930,7 @@ export default function NewSalesInvoicePage() {
 
             <div>
               <span className="text-xs uppercase font-extrabold tracking-wider text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-                Invoice Created Successfully
+                {getInvoiceTypeTitle(createdInvoice.invoiceType)} Created Successfully
               </span>
               <h3 className="text-xl font-black text-slate-900 mt-3">
                 {createdInvoice.invoiceNumber}

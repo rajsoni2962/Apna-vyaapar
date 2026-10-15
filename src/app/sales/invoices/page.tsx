@@ -18,7 +18,7 @@ import {
   Trash2,
   AlertTriangle
 } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, getInvoiceTypeTitle } from '@/lib/utils';
 import WhatsAppShareModal from '@/components/invoice/WhatsAppShareModal';
 
 export default function AllInvoicesPage() {
@@ -26,6 +26,7 @@ export default function AllInvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [typeFilter, setTypeFilter] = useState('All');
   const [shareModalInvoice, setShareModalInvoice] = useState<any | null>(null);
 
   // Soft Delete State
@@ -36,7 +37,8 @@ export default function AllInvoicesPage() {
   const fetchInvoices = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/invoices?search=${encodeURIComponent(search)}&status=${statusFilter}`);
+      const typeParam = typeFilter !== 'All' ? `&invoiceType=${typeFilter}` : '';
+      const res = await fetch(`/api/invoices?search=${encodeURIComponent(search)}&status=${statusFilter}${typeParam}`);
       const json = await res.json();
       if (json.success) setInvoices(json.data);
     } catch (err) {
@@ -48,7 +50,7 @@ export default function AllInvoicesPage() {
 
   useEffect(() => {
     fetchInvoices();
-  }, [search, statusFilter]);
+  }, [search, statusFilter, typeFilter]);
 
   const handleSoftDelete = async () => {
     if (!deleteTarget) return;
@@ -141,20 +143,36 @@ export default function AllInvoicesPage() {
           />
         </div>
 
-        <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto">
-          {['All', 'Paid', 'Partial', 'Unpaid', 'Cancelled'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition whitespace-nowrap ${
-                statusFilter === st
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {st}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-indigo-600"
+          >
+            <option value="All">All Types</option>
+            <option value="TAX_INVOICE">Tax Invoice</option>
+            <option value="BILL_OF_SUPPLY">Bill of Supply</option>
+            <option value="NON_GST">Non-GST Invoice</option>
+            <option value="PROFORMA">Proforma Invoice</option>
+            <option value="QUOTATION">Quotation / Estimate</option>
+            <option value="CASH_MEMO">Cash Memo</option>
+          </select>
+
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {['All', 'Paid', 'Partial', 'Unpaid', 'Cancelled'].map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition whitespace-nowrap ${
+                  statusFilter === st
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -194,10 +212,15 @@ export default function AllInvoicesPage() {
                     <td className="py-3 px-4 font-bold text-slate-900">
                       <Link
                         href={`/sales/invoices/${inv.id}`}
-                        className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                        className="text-indigo-600 hover:text-indigo-800 hover:underline block"
                       >
                         {inv.invoiceNumber}
                       </Link>
+                      {inv.invoiceType && inv.invoiceType !== 'TAX_INVOICE' && (
+                        <span className="inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                          {getInvoiceTypeTitle(inv.invoiceType)}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
                       {formatDate(inv.date)}

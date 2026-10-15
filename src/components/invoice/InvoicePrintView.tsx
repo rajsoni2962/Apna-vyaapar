@@ -18,7 +18,7 @@ import {
   AlertTriangle,
   Trash2
 } from 'lucide-react';
-import { formatCurrency, formatDate, numberToWords } from '@/lib/utils';
+import { formatCurrency, formatDate, numberToWords, getInvoiceTypeTitle, getTaxConfigLabel } from '@/lib/utils';
 import Link from 'next/link';
 import WhatsAppShareModal from '@/components/invoice/WhatsAppShareModal';
 import InvoiceAuditHistoryModal from '@/components/invoice/InvoiceAuditHistoryModal';
@@ -247,6 +247,11 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
               <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
                 v{invoice.revisionNumber || 1}
               </span>
+              {currentInvoice.invoiceType && currentInvoice.invoiceType !== 'TAX_INVOICE' && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700">
+                  {getInvoiceTypeTitle(currentInvoice.invoiceType)}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               Customer: <span className="font-medium text-slate-700">{customer.name || invoice.customer?.name}</span> • Date: {formatDate(invoice.date)}
@@ -347,7 +352,7 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
         >
           {/* Top Title Banner */}
           <div className="text-center font-bold text-base tracking-wider text-slate-800 uppercase pb-2 border-b border-slate-200">
-            Tax Invoice
+            {getInvoiceTypeTitle(currentInvoice.invoiceType)}
           </div>
 
           {/* Header Row: Logo & Business Details */}
@@ -427,7 +432,9 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
                 Invoice Details:
               </div>
               <div className="text-xs">
-                <span className="text-slate-500">Invoice No.:</span>{' '}
+                <span className="text-slate-500">
+                  {currentInvoice.invoiceType === 'QUOTATION' ? 'Quotation No.:' : currentInvoice.invoiceType === 'PROFORMA' ? 'Proforma No.:' : 'Invoice No.:'}
+                </span>{' '}
                 <strong className="text-sm text-slate-900 font-bold">{invoice.invoiceNumber}</strong>
               </div>
               <div className="text-xs">
@@ -565,30 +572,66 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
                   <span className="font-semibold">- {formatCurrency(invoice.discountAmount)}</span>
                 </div>
               )}
-              {invoice.taxableAmount > 0 && (
-                <div className="flex justify-between py-1 border-b border-slate-100">
-                  <span className="text-slate-600">Taxable Value:</span>
-                  <span className="font-medium text-slate-800">{formatCurrency(invoice.taxableAmount)}</span>
-                </div>
-              )}
-              {invoice.cgst > 0 && (
-                <div className="flex justify-between py-1 border-b border-slate-100 text-slate-600">
-                  <span>CGST (9%):</span>
-                  <span>{formatCurrency(invoice.cgst)}</span>
-                </div>
-              )}
-              {invoice.sgst > 0 && (
-                <div className="flex justify-between py-1 border-b border-slate-100 text-slate-600">
-                  <span>SGST (9%):</span>
-                  <span>{formatCurrency(invoice.sgst)}</span>
-                </div>
-              )}
-              {invoice.igst > 0 && (
-                <div className="flex justify-between py-1 border-b border-slate-100 text-slate-600">
-                  <span>IGST (18%):</span>
-                  <span>{formatCurrency(invoice.igst)}</span>
-                </div>
-              )}
+              {(() => {
+                const isNoTax = currentInvoice.invoiceType === 'BILL_OF_SUPPLY' || 
+                                currentInvoice.invoiceType === 'NON_GST' || 
+                                currentInvoice.taxConfiguration === 'NONE';
+                const isExempt = currentInvoice.taxConfiguration === 'EXEMPT';
+                const isIgst = currentInvoice.taxConfiguration === 'IGST';
+
+                if (isNoTax) return null;
+
+                if (isExempt) {
+                  return (
+                    <div className="flex justify-between py-1 border-b border-slate-100 text-slate-500">
+                      <span>GST (Exempt / Nil-Rated):</span>
+                      <span className="font-medium">₹0.00 (0%)</span>
+                    </div>
+                  );
+                }
+
+                if (isIgst) {
+                  return (
+                    <>
+                      {invoice.taxableAmount > 0 && (
+                        <div className="flex justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-600">Taxable Value:</span>
+                          <span className="font-medium text-slate-800">{formatCurrency(invoice.taxableAmount)}</span>
+                        </div>
+                      )}
+                      {invoice.igst > 0 && (
+                        <div className="flex justify-between py-1 border-b border-slate-100 text-slate-600">
+                          <span>IGST (18%):</span>
+                          <span>{formatCurrency(invoice.igst)}</span>
+                        </div>
+                      )}
+                    </>
+                  );
+                }
+
+                return (
+                  <>
+                    {invoice.taxableAmount > 0 && (
+                      <div className="flex justify-between py-1 border-b border-slate-100">
+                        <span className="text-slate-600">Taxable Value:</span>
+                        <span className="font-medium text-slate-800">{formatCurrency(invoice.taxableAmount)}</span>
+                      </div>
+                    )}
+                    {invoice.cgst > 0 && (
+                      <div className="flex justify-between py-1 border-b border-slate-100 text-slate-600">
+                        <span>CGST (9%):</span>
+                        <span>{formatCurrency(invoice.cgst)}</span>
+                      </div>
+                    )}
+                    {invoice.sgst > 0 && (
+                      <div className="flex justify-between py-1 border-b border-slate-100 text-slate-600">
+                        <span>SGST (9%):</span>
+                        <span>{formatCurrency(invoice.sgst)}</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               <div className="flex justify-between py-1.5 border-b-2 border-slate-900 text-sm font-bold text-slate-900">
                 <span>Grand Total:</span>
                 <span className="text-base text-indigo-700">{formatCurrency(grandTotal)}</span>

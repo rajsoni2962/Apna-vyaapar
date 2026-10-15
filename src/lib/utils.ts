@@ -84,3 +84,35 @@ export function numberToWords(num: number): string {
   }
   return result + ' only';
 }
+
+export function getInvoiceTypeTitle(type?: string): string {
+  switch (type) {
+    case 'BILL_OF_SUPPLY':
+      return 'BILL OF SUPPLY';
+    case 'NON_GST':
+      return 'NON-GST INVOICE';
+    case 'PROFORMA':
+      return 'PROFORMA INVOICE';
+    case 'QUOTATION':
+      return 'QUOTATION / ESTIMATE';
+    case 'CASH_MEMO':
+      return 'CASH MEMO';
+    case 'TAX_INVOICE':
+    default:
+      return 'TAX INVOICE';
+  }
+}
+
+export function getTaxConfigLabel(config?: string): string {
+  switch (config) {
+    case 'IGST':
+      return 'IGST (Inter-State)';
+    case 'EXEMPT':
+      return 'Exempt / Nil-Rated';
+    case 'NONE':
+      return 'No GST / Non-Taxable';
+    case 'CGST_SGST':
+    default:
+      return 'CGST + SGST (Intra-State)';
+  }
+}

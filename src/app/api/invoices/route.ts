@@ -7,6 +7,7 @@ export async function GET(request: Request) {
     const search = searchParams.get('search') || '';
     const customerId = searchParams.get('customerId') || '';
     const status = searchParams.get('status') || '';
+    const invoiceType = searchParams.get('invoiceType') || '';
 
     const includeDeleted = searchParams.get('includeDeleted') === 'true';
 
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
     }
     if (customerId) where.customerId = customerId;
     if (status && status !== 'All') where.status = status;
+    if (invoiceType && invoiceType !== 'All') where.invoiceType = invoiceType;
 
     const invoices = await db.invoice.findMany({
       where,
@@ -51,6 +53,8 @@ export async function POST(request: Request) {
       customerId,
       date,
       dueDate,
+      invoiceType = 'TAX_INVOICE',
+      taxConfiguration = 'CGST_SGST',
       items, // array of { productId, serialNumber, description, hsn, quantity, unit, rate, discount, gstPercent, taxableAmount, gstAmount, total }
       subtotal,
       discountPercent,
@@ -164,6 +168,8 @@ export async function POST(request: Request) {
           notes: notes || null,
           terms: terms || settings?.terms || null,
           status: 'Confirmed',
+          invoiceType: invoiceType || 'TAX_INVOICE',
+          taxConfiguration: taxConfiguration || 'CGST_SGST',
           templateVersion: 'v1.0',
           isFinalized: true,
           finalizedAt: invDate,
@@ -234,6 +240,8 @@ export async function POST(request: Request) {
           previousSnapshot: null,
           newSnapshot: JSON.stringify({
             invoiceNumber: invoice.invoiceNumber,
+            invoiceType: invoice.invoiceType,
+            taxConfiguration: invoice.taxConfiguration,
             date: invoice.date,
             customerSnapshot,
             businessSnapshot,
@@ -245,89 +253,92 @@ export async function POST(request: Request) {
         },
       });
 
-      // 3. For each item: decrease stock, record stock movement, update serial number (PHYSICAL PRODUCTS ONLY)
-      for (const it of items) {
-        const prod = productMap.get(it.productId);
-        const isService = prod?.productType === 'SERVICE' || prod?.category?.toLowerCase() === 'service';
+      // 3. For physical sales (excluding Quotations / Estimates which do not adjust inventory):
+      // Decrease stock, record stock movement, update serial number
+      if (invoiceType !== 'QUOTATION') {
+        for (const it of items) {
+          const prod = productMap.get(it.productId);
+          const isService = prod?.productType === 'SERVICE' || prod?.category?.toLowerCase() === 'service';
 
-        // SERVICES MUST NOT HAVE STOCK UNITS OR CREATE STOCK MOVEMENTS
-        if (!isService) {
-          const qty = parseInt(it.quantity) || 1;
-          const updatedProd = await tx.product.update({
-            where: { id: it.productId },
-            data: {
-              currentStock: { decrement: qty },
-            },
-          });
-
-          // Record stock movement for physical items
-          await tx.stockMovement.create({
-            data: {
-              productId: it.productId,
-              date: invDate,
-              type: 'SALE',
-              referenceType: 'INVOICE',
-              referenceId: invoice.id,
-              referenceNumber: invoice.invoiceNumber,
-              quantityChange: -qty,
-              balanceAfter: updatedProd.currentStock,
-              unitPrice: parseFloat(it.rate) || 0,
-              notes: `Sale on Invoice ${invoice.invoiceNumber} ${it.serialNumber ? `(SN: ${it.serialNumber})` : ''}`,
-            },
-          });
-
-          // If specific serial number selected, mark it sold
-          if (it.serialNumber) {
-            const snRecord = await tx.serialNumber.findFirst({
-              where: { serialNumber: it.serialNumber },
+          // SERVICES MUST NOT HAVE STOCK UNITS OR CREATE STOCK MOVEMENTS
+          if (!isService) {
+            const qty = parseInt(it.quantity) || 1;
+            const updatedProd = await tx.product.update({
+              where: { id: it.productId },
+              data: {
+                currentStock: { decrement: qty },
+              },
             });
 
-            if (snRecord) {
-              const warStart = invDate;
-              const warEnd = new Date(invDate);
-              warEnd.setMonth(warEnd.getMonth() + 6); // default 6 months warranty
+            // Record stock movement for physical items
+            await tx.stockMovement.create({
+              data: {
+                productId: it.productId,
+                date: invDate,
+                type: 'SALE',
+                referenceType: 'INVOICE',
+                referenceId: invoice.id,
+                referenceNumber: invoice.invoiceNumber,
+                quantityChange: -qty,
+                balanceAfter: updatedProd.currentStock,
+                unitPrice: parseFloat(it.rate) || 0,
+                notes: `Sale on Invoice ${invoice.invoiceNumber} ${it.serialNumber ? `(SN: ${it.serialNumber})` : ''}`,
+              },
+            });
 
-              await tx.serialNumber.update({
-                where: { id: snRecord.id },
-                data: {
-                  status: 'Sold',
-                  customerId,
-                  salesInvoiceId: invoice.id,
-                  saleDate: invDate,
-                  sellingPrice: parseFloat(it.rate) || prod?.sellingPrice || 0,
-                  warrantyStart: warStart,
-                  warrantyEnd: warEnd,
-                },
+            // If specific serial number selected, mark it sold
+            if (it.serialNumber) {
+              const snRecord = await tx.serialNumber.findFirst({
+                where: { serialNumber: it.serialNumber },
               });
+
+              if (snRecord) {
+                const warStart = invDate;
+                const warEnd = new Date(invDate);
+                warEnd.setMonth(warEnd.getMonth() + 6); // default 6 months warranty
+
+                await tx.serialNumber.update({
+                  where: { id: snRecord.id },
+                  data: {
+                    status: 'Sold',
+                    customerId,
+                    salesInvoiceId: invoice.id,
+                    saleDate: invDate,
+                    sellingPrice: parseFloat(it.rate) || prod?.sellingPrice || 0,
+                    warrantyStart: warStart,
+                    warrantyEnd: warEnd,
+                  },
+                });
+              }
             }
           }
         }
-      }
 
-      // 4. Update customer balance with unpaid amount
-      if (balanceDue > 0) {
-        await tx.customer.update({
-          where: { id: customerId },
-          data: { currentBalance: { increment: balanceDue } },
-        });
-      }
+        // 4. Update customer balance with unpaid amount
+        if (balanceDue > 0) {
+          await tx.customer.update({
+            where: { id: customerId },
+            data: { currentBalance: { increment: balanceDue } },
+          });
+        }
 
-      // 5. If paid amount > 0, create payment transaction
-      if (paid > 0) {
-        const payNum = `PAY-SALE-${Date.now().toString().slice(-6)}`;
-        await tx.payment.create({
-          data: {
-            paymentNumber: payNum,
-            date: invDate,
-            type: 'CUSTOMER_PAYMENT',
-            customerId,
-            invoiceId: invoice.id,
-            amount: paid,
-            paymentMode: paymentMode || 'Cash',
-            referenceNumber: paymentReference || `REC-${invoice.invoiceNumber}`,
-            notes: `Payment for Invoice ${invoice.invoiceNumber}`,
-          },
-        });
+        // 5. If paid amount > 0, create payment transaction
+        if (paid > 0) {
+          const payNum = `PAY-SALE-${Date.now().toString().slice(-6)}`;
+          await tx.payment.create({
+            data: {
+              paymentNumber: payNum,
+              date: invDate,
+              type: 'CUSTOMER_PAYMENT',
+              customerId,
+              invoiceId: invoice.id,
+              amount: paid,
+              paymentMode: paymentMode || 'Cash',
+              referenceNumber: paymentReference || `REC-${invoice.invoiceNumber}`,
+              notes: `Payment for Invoice ${invoice.invoiceNumber}`,
+            },
+          });
+        }
       }
 
       return invoice;

@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { numberToWords, formatDate } from './utils';
+import { numberToWords, formatDate, getInvoiceTypeTitle } from './utils';
 
 export function normalizePhoneNumber(rawPhone?: string | null, defaultCountryCode = '91') {
   if (!rawPhone) {
@@ -182,12 +182,13 @@ export async function generateInvoicePdf(
   const templateVersion = invoice?.templateVersion || 'v1.0';
 
   // 1. Top Banner
+  const invoiceTitle = getInvoiceTypeTitle(invoice?.invoiceType);
   doc.setFillColor(15, 23, 42); // Obsidian Slate-900
   doc.rect(10, 8, 190, 7.5, 'F');
   doc.setTextColor(212, 175, 55); // Metallic Gold
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('TAX INVOICE', 105, 13.2, { align: 'center' });
+  doc.text(invoiceTitle, 105, 13.2, { align: 'center' });
 
   // 2. Business Header
   let headerLeftX = 10;
@@ -235,7 +236,8 @@ export async function generateInvoicePdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(`Invoice #: ${invoice?.invoiceNumber || '-'}`, 135, 22.5);
+  const numLabel = invoice?.invoiceType === 'QUOTATION' ? 'Quotation #' : (invoice?.invoiceType === 'PROFORMA' ? 'Proforma #' : 'Invoice #');
+  doc.text(`${numLabel}: ${invoice?.invoiceNumber || '-'}`, 135, 22.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.2);
@@ -243,7 +245,11 @@ export async function generateInvoicePdf(
   doc.text(`Date: ${formatDate(invoice?.date)}`, 135, 26.5);
   doc.text(`Payment: ${invoice?.paymentMode || 'Cash'}`, 135, 30.5);
 
-  if (revisionNumber > 1) {
+  if (invoice?.invoiceType && invoice.invoiceType !== 'TAX_INVOICE') {
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(79, 70, 229);
+    doc.text(`Type: ${invoiceTitle}`, 135, 34.5);
+  } else if (revisionNumber > 1) {
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(99, 102, 241); // Indigo-500
     doc.text(`Revision: #${revisionNumber}`, 135, 34.5);
@@ -563,6 +569,12 @@ export async function generateInvoicePdf(
     calcY += 4.9;
   }
 
+  const isNoTax = invoice?.invoiceType === 'BILL_OF_SUPPLY' || 
+                  invoice?.invoiceType === 'NON_GST' || 
+                  invoice?.taxConfiguration === 'NONE';
+  const isExempt = invoice?.taxConfiguration === 'EXEMPT';
+  const isIgst = invoice?.taxConfiguration === 'IGST';
+
   const calcBoxStartY = summaryTop;
   drawCalcRow('Sub Total:', formatPdfCurrency(invoice?.subtotal));
 
@@ -571,18 +583,28 @@ export async function generateInvoicePdf(
     drawCalcRow(discLabel, `- ${formatPdfCurrency(invoice.discountAmount)}`, false, [5, 150, 105]);
   }
 
-  if (invoice?.taxableAmount > 0) {
-    drawCalcRow('Taxable Value:', formatPdfCurrency(invoice.taxableAmount));
-  }
-
-  if (invoice?.cgst > 0) {
-    drawCalcRow('CGST (9%):', formatPdfCurrency(invoice.cgst));
-  }
-  if (invoice?.sgst > 0) {
-    drawCalcRow('SGST (9%):', formatPdfCurrency(invoice.sgst));
-  }
-  if (invoice?.igst > 0) {
-    drawCalcRow('IGST (18%):', formatPdfCurrency(invoice.igst));
+  if (!isNoTax) {
+    if (isExempt) {
+      drawCalcRow('Tax (Exempt / Nil):', 'Rs. 0.00', false, [100, 116, 139]);
+    } else if (isIgst) {
+      if (invoice?.taxableAmount > 0) {
+        drawCalcRow('Taxable Value:', formatPdfCurrency(invoice.taxableAmount));
+      }
+      if (invoice?.igst > 0) {
+        drawCalcRow('IGST (18%):', formatPdfCurrency(invoice.igst));
+      }
+    } else {
+      // Standard CGST + SGST
+      if (invoice?.taxableAmount > 0) {
+        drawCalcRow('Taxable Value:', formatPdfCurrency(invoice.taxableAmount));
+      }
+      if (invoice?.cgst > 0) {
+        drawCalcRow('CGST (9%):', formatPdfCurrency(invoice.cgst));
+      }
+      if (invoice?.sgst > 0) {
+        drawCalcRow('SGST (9%):', formatPdfCurrency(invoice.sgst));
+      }
+    }
   }
 
   if (invoice?.roundOff && invoice.roundOff !== 0) {
