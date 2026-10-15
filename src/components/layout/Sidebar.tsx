@@ -557,6 +557,13 @@ export default function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarPr
             {settingsOpen && (
               <div className="ml-4 pl-3 border-l border-slate-800/80 space-y-0.5 mt-1">
                 <Link
+                  href="/profile"
+                  onClick={onCloseMobile}
+                  className="block px-3 py-1.5 rounded-lg text-xs font-medium text-amber-400 hover:text-amber-300 hover:bg-slate-800/40"
+                >
+                  My User Profile
+                </Link>
+                <Link
                   href="/settings/profile"
                   onClick={onCloseMobile}
                   className="block px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
@@ -582,18 +589,25 @@ export default function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarPr
           </div>
         </div>
 
-        {/* Footer Quick Business Info */}
-        <div className="p-3 border-t border-slate-800/80 bg-slate-950/60 text-xs">
+        {/* Footer Quick Business & User Info */}
+        <Link
+          href="/profile"
+          onClick={onCloseMobile}
+          className="block p-3 border-t border-slate-800/80 bg-slate-950/60 hover:bg-slate-900/80 transition text-xs group"
+          title="Open User Profile"
+        >
           <div className="flex items-center justify-between text-slate-400">
-            <span className="font-medium text-slate-300">Raj Soni</span>
-            <span className="text-[10px] px-2 py-0.5 bg-purple-900/50 text-purple-300 rounded border border-purple-500/30">
+            <span className="font-semibold text-slate-300 group-hover:text-amber-400 transition">
+              Raj Soni
+            </span>
+            <span className="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded border border-amber-500/30">
               Admin
             </span>
           </div>
-          <div className="text-[11px] text-slate-500 truncate mt-0.5">
-            Ashraya 10, New Ranip, Ahmedabad
+          <div className="text-[11px] text-slate-500 truncate mt-0.5 group-hover:text-slate-400">
+            Ashirwad Technologies • Ahmedabad
           </div>
-        </div>
+        </Link>
       </aside>
     </>
   );

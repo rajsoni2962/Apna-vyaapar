@@ -365,9 +365,13 @@ model User {
   username  String   @unique
   name      String
   email     String?
+  phone     String?
+  avatarUrl String?
+  bio       String?
   password  String   @default("admin123")
   role      String   @default("admin") // admin, staff
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @default(now())
 }
 
 model InvoiceShareLog {
