@@ -1,0 +1,384 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model BusinessSettings {
+  id                  String   @id @default("default")
+  companyName         String   @default("ASHIRWAD TECHNOLOGIES")
+  tagline             String   @default("Beyond Tech Limits...")
+  address             String   @default("Ashraya 10, GST compound, new ranip, Ahmedabad 382470.")
+  phone               String   @default("9662278994")
+  email               String   @default("rajsoni2962@gmail.com")
+  gstin               String   @default("24AANPA0000A1Z5")
+  state               String   @default("Gujarat")
+  stateCode           String   @default("24")
+  bankName            String   @default("State Bank of India")
+  accountNumber       String   @default("39485720194")
+  ifscCode            String   @default("SBIN0001234")
+  upiId               String   @default("9662278994@upi")
+  invoicePrefix       String   @default("AT/2026/")
+  nextInvoiceNumber   Int      @default(110)
+  purchasePrefix      String   @default("PO/2026/")
+  nextPurchaseNumber  Int      @default(1)
+  logoUrl             String   @default("/brand/logo.jpeg")
+  signatureUrl        String   @default("/brand/signature.jpeg")
+  terms               String   @default("* Tested and working perfectly at the time of sale.\n* Please inspect the laptop before purchase.\n* 6 Months of warranty covers technical issues only and excludes physical or liquid damage.\n* Battery backup may vary depending on usage.\n* No return or refund after sale unless covered under warranty.\n* Thank you for choosing us—we’re always here to help if you need support.")
+  footer              String   @default("Thank you for choosing us—we're always here to help if you need support.")
+  authorizedSignatory String   @default("Ashirwad Technologies\nRaj Soni\nProprietor")
+  geminiApiKey        String?
+  openaiApiKey        String?
+  visionProvider      String   @default("gemini")
+  visionModel         String   @default("gemini-2.5-flash")
+  updatedAt           DateTime @updatedAt
+}
+
+model Customer {
+  id             String    @id @default(cuid())
+  name           String
+  phone          String
+  email          String?
+  address        String?
+  gstin          String?
+  state          String?   @default("Gujarat")
+  stateCode      String?   @default("24")
+  openingBalance Float     @default(0.0)
+  currentBalance Float     @default(0.0)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  invoices       Invoice[]
+  payments       Payment[]
+  serialNumbers  SerialNumber[]
+
+  @@index([phone])
+  @@index([name])
+}
+
+model Supplier {
+  id              String     @id @default(cuid())
+  name            String
+  phone           String?
+  email           String?
+  address         String?
+  gstin           String?
+  state           String?    @default("Gujarat")
+  stateCode       String?    @default("24")
+  openingBalance  Float      @default(0.0)
+  currentBalance  Float      @default(0.0)
+  notes           String?
+  invoicePatterns String?    // JSON string of learned supplier invoice patterns & term mappings
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  purchases      Purchase[]
+  payments       Payment[]
+  serialNumbers  SerialNumber[]
+
+  @@index([phone])
+  @@index([name])
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  name         String
+  brand        String?
+  model        String?
+  category     String   @default("Laptop")
+  cpu          String?
+  generation   String?
+  ram          String?
+  ramType      String?
+  storage      String?
+  storageType  String?
+  gpu          String?
+  displaySize  String?
+  condition    String?  @default("Refurbished")
+  hsn          String?  @default("8471")
+  gstPercent   Float    @default(18.0)
+  purchasePrice Float   @default(0.0)
+  sellingPrice Float   @default(0.0)
+  minStock     Int      @default(1)
+  currentStock Int      @default(0)
+  warranty     String?  @default("6 Months")
+  notes        String?
+  imageUrl     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  serialNumbers SerialNumber[]
+  invoiceItems  InvoiceItem[]
+  purchaseItems PurchaseItem[]
+  movements     StockMovement[]
+
+  @@index([name])
+  @@index([brand])
+  @@index([category])
+}
+
+model SerialNumber {
+  id                String    @id @default(cuid())
+  serialNumber      String    @unique
+  productId         String
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplierId        String?
+  supplier          Supplier? @relation(fields: [supplierId], references: [id])
+  purchaseInvoiceId String?
+  purchasePrice     Float?
+  purchaseDate      DateTime?
+  sellingPrice      Float?
+  customerId        String?
+  customer          Customer? @relation(fields: [customerId], references: [id])
+  salesInvoiceId    String?
+  salesInvoice      Invoice?  @relation(fields: [salesInvoiceId], references: [id])
+  saleDate          DateTime?
+  warrantyStart     DateTime?
+  warrantyEnd       DateTime?
+  status            String    @default("In Stock") // In Stock, Sold, Reserved, Under Repair, Returned, Warranty Claim
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([serialNumber])
+  @@index([productId])
+  @@index([customerId])
+  @@index([salesInvoiceId])
+}
+
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNumber   String        @unique
+  date            DateTime      @default(now())
+  dueDate         DateTime?
+  customerId      String
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  subtotal        Float         @default(0.0)
+  discountPercent Float         @default(0.0)
+  discountAmount  Float         @default(0.0)
+  taxableAmount   Float         @default(0.0)
+  cgst            Float         @default(0.0)
+  sgst            Float         @default(0.0)
+  igst            Float         @default(0.0)
+  grandTotal      Float         @default(0.0)
+  paidAmount      Float         @default(0.0)
+  balanceDue      Float         @default(0.0)
+  paymentMode     String        @default("Cash") // Cash, UPI, Bank Transfer, Card, Credit, Other
+  paymentStatus   String        @default("Paid") // Paid, Partial, Unpaid, Overdue
+  notes           String?
+  terms           String?
+  status          String        @default("Confirmed") // Confirmed, Cancelled
+  whatsappSharedAt DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Snapshot & Historical Preservation Fields
+  customerSnapshot  String?       // JSON: { id, name, phone, email, address, gstin, state, stateCode }
+  businessSnapshot  String?       // JSON: { companyName, tagline, address, phone, email, gstin, state, stateCode, bankName, accountNumber, ifscCode, upiId, terms, authorizedSignatory, logoUrl, signatureUrl, footer }
+  roundOff          Float         @default(0.0)
+  finalTotal        Float         @default(0.0)
+  templateVersion   String        @default("v1.0")
+  isFinalized       Boolean       @default(true)
+  finalizedAt       DateTime?     @default(now())
+  revisionNumber    Int           @default(1)
+  revisionReason    String?
+  parentInvoiceId   String?
+  pdfGeneratedAt    DateTime?     // When temporary PDF was last generated
+  pdfStorageUrl     String?       // Stored ONLY when explicit retention feature is requested
+
+  items           InvoiceItem[]
+  payments        Payment[]
+  serialNumbers   SerialNumber[]
+  shareLogs       InvoiceShareLog[]
+  revisions       InvoiceRevisionAudit[]
+
+  @@index([invoiceNumber])
+  @@index([date])
+  @@index([customerId])
+  @@index([status])
+  @@index([isFinalized])
+}
+
+model InvoiceItem {
+  id            String   @id @default(cuid())
+  invoiceId     String
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  serialNumber  String?
+  description   String?
+  productName   String?  // Snapshot of product name at invoice time
+  warranty      String?  @default("6 Months") // Snapshot of warranty at invoice time
+  itemSnapshot  String?  // Full item snapshot JSON
+  hsn           String?
+  quantity      Int      @default(1)
+  unit          String   @default("Pcs")
+  rate          Float
+  discount      Float    @default(0.0)
+  gstPercent    Float    @default(18.0)
+  taxableAmount Float
+  gstAmount     Float
+  total         Float
+
+  @@index([invoiceId])
+  @@index([productId])
+}
+
+model InvoiceRevisionAudit {
+  id               String   @id @default(cuid())
+  invoiceId        String
+  invoice          Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  revisionNumber   Int
+  action           String   // CREATED_FINALIZED, REVISED, CANCELLED
+  changedBy        String   @default("admin")
+  changeReason     String
+  previousSnapshot String?  // Full JSON of previous invoice state
+  newSnapshot      String   // Full JSON of new invoice state
+  createdAt        DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+model Purchase {
+  id                    String         @id @default(cuid())
+  purchaseNumber        String         @unique
+  supplierInvoiceNumber String
+  date                  DateTime       @default(now())
+  dueDate               DateTime?
+  supplierId            String
+  supplier              Supplier       @relation(fields: [supplierId], references: [id])
+  subtotal              Float          @default(0.0)
+  discountPercent       Float          @default(0.0)
+  discountAmount        Float          @default(0.0)
+  taxableAmount         Float          @default(0.0)
+  cgst                  Float          @default(0.0)
+  sgst                  Float          @default(0.0)
+  igst                  Float          @default(0.0)
+  grandTotal            Float          @default(0.0)
+  paidAmount            Float          @default(0.0)
+  balanceDue            Float          @default(0.0)
+  paymentStatus         String         @default("Unpaid") // Paid, Partial, Unpaid
+  billFileUrl           String?
+  originalFileName      String?
+  documentType          String?        // GST Invoice, Retail Bill, etc.
+  aiExtractedData       String?        // JSON structured vision data
+  verificationStatus    String         @default("VERIFIED") // VERIFIED, NEEDS_REVIEW, MISMATCH
+  ocrRawData            String?
+  notes                 String?
+  status                String         @default("Confirmed") // Confirmed, Cancelled
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  items                 PurchaseItem[]
+  payments              Payment[]
+
+  @@index([purchaseNumber])
+  @@index([supplierInvoiceNumber])
+  @@index([date])
+  @@index([supplierId])
+}
+
+model PurchaseItem {
+  id            String   @id @default(cuid())
+  purchaseId    String
+  purchase      Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  serialNumbers String?
+  description   String?
+  hsn           String?
+  quantity      Int      @default(1)
+  unit          String   @default("Pcs")
+  rate          Float
+  discount      Float    @default(0.0)
+  gstPercent    Float    @default(18.0)
+  taxableAmount Float
+  gstAmount     Float
+  total         Float
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+model Payment {
+  id              String    @id @default(cuid())
+  paymentNumber   String    @unique
+  date            DateTime  @default(now())
+  type            String    // CUSTOMER_PAYMENT or SUPPLIER_PAYMENT
+  customerId      String?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  supplierId      String?
+  supplier        Supplier? @relation(fields: [supplierId], references: [id])
+  invoiceId       String?
+  invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
+  purchaseId      String?
+  purchase        Purchase? @relation(fields: [purchaseId], references: [id])
+  amount          Float
+  paymentMode     String    @default("Cash") // Cash, UPI, Bank Transfer, Card, Cheque, Other
+  referenceNumber String?
+  notes           String?
+  createdAt       DateTime  @default(now())
+
+  @@index([invoiceId])
+  @@index([purchaseId])
+  @@index([customerId])
+  @@index([supplierId])
+}
+
+model StockMovement {
+  id              String   @id @default(cuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  date            DateTime @default(now())
+  type            String   // PURCHASE, SALE, ADJUSTMENT, RETURN_CUSTOMER, RETURN_SUPPLIER
+  referenceType   String?  // INVOICE, PURCHASE, ADJUSTMENT
+  referenceId     String?
+  referenceNumber String?
+  quantityChange  Int
+  balanceAfter    Int
+  unitPrice       Float?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  @@index([productId])
+  @@index([date])
+}
+
+model Expense {
+  id            String   @id @default(cuid())
+  category      String   // Electricity, Rent, Transport, Repair, Software, Internet, Salary, Packaging, Miscellaneous
+  description   String
+  amount        Float
+  date          DateTime @default(now())
+  paymentMethod String   @default("Cash")
+  attachmentUrl String?
+  notes         String?
+  createdAt     DateTime @default(now())
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  name      String
+  email     String?
+  password  String   @default("admin123")
+  role      String   @default("admin") // admin, staff
+  createdAt DateTime @default(now())
+}
+
+model InvoiceShareLog {
+  id            String   @id @default(cuid())
+  invoiceId     String
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  channel       String   @default("WhatsApp")
+  recipient     String   // e.g. Phone number
+  customerName  String?
+  invoiceNumber String?
+  sharedAt      DateTime @default(now())
+  status        String   @default("Shared") // Shared
+}
+

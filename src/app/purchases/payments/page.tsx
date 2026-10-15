@@ -1,0 +1,405 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import AppLayout from '@/components/layout/AppLayout';
+import {
+  Truck,
+  Plus,
+  Search,
+  Calendar,
+  CreditCard,
+  RefreshCw,
+  X,
+  IndianRupee
+} from 'lucide-react';
+import Link from 'next/link';
+
+interface Payment {
+  id: string;
+  paymentNumber: string;
+  date: string;
+  amount: number;
+  paymentMode: string;
+  referenceNumber?: string | null;
+  notes?: string | null;
+  supplier?: {
+    id: string;
+    name: string;
+    phone?: string | null;
+    currentBalance: number;
+  };
+  purchase?: {
+    id: string;
+    purchaseNumber: string;
+    grandTotal: number;
+  };
+}
+
+interface SupplierOption {
+  id: string;
+  name: string;
+  phone?: string | null;
+  currentBalance: number;
+}
+
+export default function SupplierPaymentsPage() {
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    supplierId: '',
+    amount: '',
+    paymentMode: 'Bank Transfer',
+    referenceNumber: '',
+    date: new Date().toISOString().split('T')[0],
+    notes: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const fetchPayments = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/payments?type=SUPPLIER_PAYMENT');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setPayments(data.data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchSuppliers = async () => {
+    try {
+      const res = await fetch('/api/suppliers');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setSuppliers(data.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPayments();
+    fetchSuppliers();
+  }, []);
+
+  const handleOpenModal = () => {
+    setFormData({
+      supplierId: suppliers.length > 0 ? suppliers[0].id : '',
+      amount: '',
+      paymentMode: 'Bank Transfer',
+      referenceNumber: '',
+      date: new Date().toISOString().split('T')[0],
+      notes: '',
+    });
+    setErrorMsg('');
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setErrorMsg('');
+
+    try {
+      const res = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          type: 'SUPPLIER_PAYMENT',
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsModalOpen(false);
+        fetchPayments();
+        fetchSuppliers();
+      } else {
+        setErrorMsg(data.error || 'Failed to record supplier payment');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Network error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const filtered = payments.filter((p) => {
+    const supName = p.supplier?.name || '';
+    const num = p.paymentNumber || '';
+    const ref = p.referenceNumber || '';
+    const q = search.toLowerCase();
+    return supName.toLowerCase().includes(q) || num.toLowerCase().includes(q) || ref.toLowerCase().includes(q);
+  });
+
+  const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
+
+  return (
+    <AppLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2.5">
+              <Truck className="w-6 h-6 text-orange-600" />
+              Supplier Payments Disbursed
+            </h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Record and audit all outgoing payments to distributors, vendors, and parts providers.
+            </p>
+          </div>
+          <button
+            onClick={handleOpenModal}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-orange-600 rounded-xl hover:bg-orange-700 shadow-sm transition"
+          >
+            <Plus className="w-4 h-4" />
+            Record Supplier Payment
+          </button>
+        </div>
+
+        {/* Summary Banner */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Disbursed to Vendors</div>
+            <div className="text-3xl font-black text-orange-600 mt-1">₹{totalPaid.toLocaleString('en-IN')}</div>
+          </div>
+          <div className="text-xs text-slate-500 text-right">
+            Disbursement Vouchers: <span className="font-bold text-slate-800">{payments.length}</span>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div className="relative w-full max-w-md">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by vendor, voucher # or reference..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
+            />
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+          {loading ? (
+            <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
+              <RefreshCw className="w-6 h-6 animate-spin text-orange-600" />
+              <span>Loading payment history...</span>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-12 text-center text-slate-400">
+              <CreditCard className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+              <div className="font-semibold text-slate-700">No supplier payments found</div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-600">
+                <thead className="bg-slate-50 border-b border-slate-200/80 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3.5 px-4">Voucher # & Date</th>
+                    <th className="py-3.5 px-4">Supplier / Vendor</th>
+                    <th className="py-3.5 px-4">Disbursement Mode</th>
+                    <th className="py-3.5 px-4">Ref / Cheque #</th>
+                    <th className="py-3.5 px-4 text-right">Amount Paid</th>
+                    <th className="py-3.5 px-4">Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50/70 transition">
+                      <td className="py-3.5 px-4">
+                        <div className="font-mono font-bold text-slate-900">{p.paymentNumber}</div>
+                        <div className="text-xs text-slate-400">
+                          {new Date(p.date).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {p.supplier ? (
+                          <Link
+                            href={`/suppliers/ledger?supplierId=${p.supplier.id}`}
+                            className="font-bold text-orange-600 hover:underline"
+                          >
+                            {p.supplier.name}
+                          </Link>
+                        ) : (
+                          <span className="text-slate-400">Vendor</span>
+                        )}
+                        {p.purchase && (
+                          <div className="text-xs text-slate-400 mt-0.5">
+                            PO: {p.purchase.purchaseNumber}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                          {p.paymentMode}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-xs text-slate-600">
+                        {p.referenceNumber || '-'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-black text-rose-600 text-base">
+                        ₹{p.amount.toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-slate-400 max-w-xs truncate">
+                        {p.notes || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Modal for Recording Supplier Payment */}
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-orange-600" />
+                  Disburse Payment to Supplier
+                </h3>
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="p-5 space-y-4">
+                {errorMsg && (
+                  <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl">
+                    {errorMsg}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Select Supplier <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={formData.supplierId}
+                    onChange={(e) => setFormData({ ...formData, supplierId: e.target.value })}
+                    className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white"
+                  >
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} — Payable: ₹{s.currentBalance.toLocaleString('en-IN')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Amount Paid (₹) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      placeholder="e.g. 10000"
+                      value={formData.amount}
+                      onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                      className="w-full px-3.5 py-2.5 text-sm font-bold bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Payment Method
+                    </label>
+                    <select
+                      value={formData.paymentMode}
+                      onChange={(e) => setFormData({ ...formData, paymentMode: e.target.value })}
+                      className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white"
+                    >
+                      <option value="Bank Transfer">Bank Transfer / NEFT / RTGS</option>
+                      <option value="UPI">UPI / QR</option>
+                      <option value="Cash">Cash</option>
+                      <option value="Cheque">Cheque</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={formData.date}
+                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                      className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Bank Ref / Cheque No.
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. UTR12345678"
+                      value={formData.referenceNumber}
+                      onChange={(e) => setFormData({ ...formData, referenceNumber: e.target.value })}
+                      className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Remarks</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Part payment against invoice 458"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-5 py-2 text-xs font-semibold text-white bg-orange-600 hover:bg-orange-700 rounded-xl transition disabled:opacity-50"
+                  >
+                    {submitting ? 'Recording...' : 'Save Disbursement'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </AppLayout>
+  );
+}
