@@ -17,6 +17,7 @@ export async function GET(
         },
         payments: true,
         serialNumbers: true,
+        businessProfile: true,
         revisions: {
           orderBy: { createdAt: 'desc' },
         },

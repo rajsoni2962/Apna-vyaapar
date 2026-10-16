@@ -16,7 +16,13 @@ export function sanitizeLogString(str: string): string {
 }
 
 export interface SecurityEvent {
-  type: 'BLOCKED_PRODUCTION_WRITE' | 'BLOCKED_PRODUCTION_TEST' | 'BLOCKED_PRODUCTION_SEED' | 'UNAUTHORIZED_MUTATION';
+  type:
+    | 'BLOCKED_PRODUCTION_WRITE'
+    | 'BLOCKED_PRODUCTION_TEST'
+    | 'BLOCKED_PRODUCTION_SEED'
+    | 'UNAUTHORIZED_MUTATION'
+    | 'UNAUTHORIZED_ACCESS_ATTEMPT'
+    | 'AUTHORIZED_DATABASE_RESET';
   message: string;
   databaseHost?: string;
   environment?: string;

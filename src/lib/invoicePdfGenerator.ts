@@ -1,5 +1,14 @@
 import { jsPDF } from 'jspdf';
 import { numberToWords, formatDate, getInvoiceTypeTitle } from './utils';
+import { getInvoiceDesign, InvoiceDesignConfig } from './invoice-design';
+
+function hexToRgb(hex: string): [number, number, number] {
+  let c = (hex || '#4f46e5').replace('#', '');
+  if (c.length === 3) c = c.split('').map((x) => x + x).join('');
+  const num = parseInt(c, 16);
+  if (isNaN(num)) return [79, 70, 229];
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
 
 export function normalizePhoneNumber(rawPhone?: string | null, defaultCountryCode = '91') {
   if (!rawPhone) {
@@ -123,6 +132,11 @@ export async function generateInvoicePdf(
     } catch {}
   }
   const customer = custSnapshot || invoice?.customer || {};
+
+  // 3. Resolve 100% customizable invoice design
+  const design: InvoiceDesignConfig = getInvoiceDesign(
+    bizSnapshot?.invoiceDesign || invoice?.businessProfile?.invoiceDesign || settings?.invoiceDesign
+  );
 
   // Auto-resolve logo, signature & QR code if not provided
   let logoBase64 = options.logoBase64;
@@ -334,7 +348,14 @@ export async function generateInvoicePdf(
   };
 
   // Table Header
-  doc.setFillColor(15, 23, 42); // Obsidian Slate-900 / dark navy
+  const [pr, pg, pb] = hexToRgb(design.primaryColor);
+  if (design.tableHeaderStyle === 'filled') {
+    doc.setFillColor(pr, pg, pb);
+  } else if (design.tableHeaderStyle === 'tinted') {
+    doc.setFillColor(Math.min(255, pr + 180), Math.min(255, pg + 180), Math.min(255, pb + 180));
+  } else {
+    doc.setFillColor(15, 23, 42); // Obsidian Slate-900 / dark navy
+  }
   doc.rect(10, currentY, 190, 6.5, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');

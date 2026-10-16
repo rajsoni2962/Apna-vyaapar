@@ -72,6 +72,9 @@ export async function PUT(request: Request) {
         terms: body.terms,
         footer: body.footer,
         authorizedSignatory: body.authorizedSignatory,
+        logoUrl: body.logoUrl,
+        signatureUrl: body.signatureUrl,
+        invoiceDesign: body.invoiceDesign !== undefined ? (typeof body.invoiceDesign === 'object' ? JSON.stringify(body.invoiceDesign) : body.invoiceDesign) : undefined,
       },
       create: {
         id: 'default',

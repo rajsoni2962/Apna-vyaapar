@@ -35,7 +35,45 @@ model BusinessSettings {
   openaiApiKey        String?
   visionProvider      String   @default("gemini")
   visionModel         String   @default("gemini-2.5-flash")
+  invoiceDesign       String?  // JSON configuration for 100% graphic invoice visual designer
   updatedAt           DateTime @updatedAt
+}
+
+model BusinessProfile {
+  id                  String   @id @default(cuid())
+  name                String   // e.g. "Head Office - Ahmedabad", "Branch 2"
+  isDefault           Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  companyName         String   @default("ASHIRWAD TECHNOLOGIES")
+  tagline             String?  @default("Beyond Tech Limits...")
+  address             String   @default("Ashraya 10, GST compound, new ranip, Ahmedabad 382470.")
+  phone               String   @default("9662278994")
+  email               String?  @default("rajsoni2962@gmail.com")
+  gstin               String?  @default("24AANPA0000A1Z5")
+  state               String   @default("Gujarat")
+  stateCode           String   @default("24")
+  bankName            String?  @default("Kotak Mahindra Bank")
+  accountNumber       String?  @default("5947557983")
+  ifscCode            String?  @default("KKBK0000879")
+  upiId               String?  @default("rajsoni2962-2@okaxis")
+  invoicePrefix       String   @default("AT/2026/")
+  nextInvoiceNumber   Int      @default(1)
+  purchasePrefix      String   @default("PO/2026/")
+  nextPurchaseNumber  Int      @default(1)
+  logoUrl             String?  @default("/brand/logo.png")
+  signatureUrl        String?  @default("/brand/signature.jpeg")
+  terms               String?
+  footer              String?
+  authorizedSignatory String?  @default("Ashirwad Technologies\nRaj Soni\nProprietor")
+  invoiceDesign       String?  // JSON for 100% graphic invoice designer
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  invoices            Invoice[]
+  users               User[]
+
+  @@index([isDefault])
+  @@index([isActive])
 }
 
 model Customer {
@@ -211,6 +249,9 @@ model Invoice {
   restoredAt        DateTime?
   restoredBy        String?
 
+  businessProfileId String?
+  businessProfile   BusinessProfile? @relation(fields: [businessProfileId], references: [id])
+
   items           InvoiceItem[]
   payments        Payment[]
   serialNumbers   SerialNumber[]
@@ -226,6 +267,7 @@ model Invoice {
   @@index([deletedAt])
   @@index([invoiceType])
   @@index([taxConfiguration])
+  @@index([businessProfileId])
 }
 
 model InvoiceItem {
@@ -387,17 +429,19 @@ model Expense {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  name      String
-  email     String?
-  phone     String?
-  avatarUrl String?
-  bio       String?
-  password  String   @default("admin123")
-  role      String   @default("admin") // admin, staff
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt @default(now())
+  id                String           @id @default(cuid())
+  username          String           @unique
+  name              String
+  email             String?
+  phone             String?
+  avatarUrl         String?
+  bio               String?
+  password          String           @default("admin123")
+  role              String           @default("admin") // admin, staff, manager
+  businessProfileId String?
+  businessProfile   BusinessProfile? @relation(fields: [businessProfileId], references: [id])
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt @default(now())
 }
 
 model InvoiceShareLog {

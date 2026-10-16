@@ -577,25 +577,32 @@ export default function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarPr
                   My User Profile
                 </Link>
                 <Link
-                  href="/settings/profile"
+                  href="/settings/profiles"
                   onClick={onCloseMobile}
                   className="block px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
                 >
-                  Business Profile
+                  Business Profiles & Branches
+                </Link>
+                <Link
+                  href="/settings/users"
+                  onClick={onCloseMobile}
+                  className="block px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+                >
+                  Team & User Accounts
                 </Link>
                 <Link
                   href="/settings/invoice"
                   onClick={onCloseMobile}
                   className="block px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
                 >
-                  Invoice & Terms Settings
+                  Visual Invoice Designer
                 </Link>
                 <Link
                   href="/settings/backup"
                   onClick={onCloseMobile}
                   className="block px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
                 >
-                  Backup & Export Data
+                  Backup & Database Reset
                 </Link>
               </div>
             )}
