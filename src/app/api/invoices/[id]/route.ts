@@ -156,6 +156,9 @@ export async function DELETE(
       });
 
       return updated;
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
     });
 
     return NextResponse.json({
@@ -643,6 +646,9 @@ export async function PUT(
       });
 
       return updatedInvoice;
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
     });
 
     return NextResponse.json({ success: true, data: editedInvoice });

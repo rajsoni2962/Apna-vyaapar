@@ -136,6 +136,9 @@ export async function POST(
       });
 
       return updated;
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
     });
 
     return NextResponse.json({

@@ -48,6 +48,9 @@ export async function DELETE(
         data: { salesInvoiceId: null },
       });
       await tx.invoice.delete({ where: { id } });
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
     });
 
     return NextResponse.json({

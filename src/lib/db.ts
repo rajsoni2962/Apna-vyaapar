@@ -18,14 +18,18 @@ function getOptimizedDatabaseUrl(): string | undefined {
     url = url.replace(':5432', ':6543');
   }
 
-  // Ensure pgbouncer and connection_limit are applied for serverless lambda environments
+  // Ensure pgbouncer and adequate connection_limit for interactive transactions in serverless environments
   if (url.includes(':6543') || url.includes('pooler.supabase.com')) {
     const hasParams = url.includes('?');
     if (!url.includes('pgbouncer=true')) {
       url += (hasParams ? '&' : '?') + 'pgbouncer=true';
     }
-    if (!url.includes('connection_limit=')) {
-      url += '&connection_limit=1';
+    // Prisma interactive transactions ($transaction) require multiple connections in the pool.
+    // connection_limit=1 causes "Transaction not found" errors due to connection pool starvation.
+    if (url.includes('connection_limit=1') && !url.includes('connection_limit=10')) {
+      url = url.replace('connection_limit=1', 'connection_limit=10');
+    } else if (!url.includes('connection_limit=')) {
+      url += '&connection_limit=10';
     }
   }
 
