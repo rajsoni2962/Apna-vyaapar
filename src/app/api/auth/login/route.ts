@@ -22,13 +22,23 @@ export async function POST(req: NextRequest) {
 
     const cleanUsername = username.trim();
 
-    // Find user by username
+    // Find user by username or email
     const user = await db.user.findFirst({
       where: {
-        username: {
-          equals: cleanUsername,
-          mode: 'insensitive',
-        },
+        OR: [
+          {
+            username: {
+              equals: cleanUsername,
+              mode: 'insensitive',
+            },
+          },
+          {
+            email: {
+              equals: cleanUsername,
+              mode: 'insensitive',
+            },
+          },
+        ],
       },
     });
 

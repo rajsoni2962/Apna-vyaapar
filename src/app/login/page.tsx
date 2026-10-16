@@ -116,7 +116,7 @@ function LoginForm() {
             htmlFor="login-username"
             className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5"
           >
-            Username
+            Username or Email
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -129,7 +129,7 @@ function LoginForm() {
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Enter username (e.g. admin)"
+              placeholder="Enter username or email"
               className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 text-white placeholder-slate-500 text-sm rounded-xl border border-slate-700/80 focus:outline-hidden focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
             />
           </div>
