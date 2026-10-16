@@ -62,7 +62,7 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
 
   const business = {
     companyName: bizSnapshot.companyName || settings?.companyName || 'ASHIRWAD TECHNOLOGIES',
-    tagline: bizSnapshot.tagline || settings?.tagline || 'Beyond Tech Limits...',
+    tagline: bizSnapshot.tagline || settings?.tagline || 'REPAIR | UPGRADE | BUILD | SERVICE',
     address: bizSnapshot.address || settings?.address || 'Ashraya 10, GST compound, new ranip, Ahmedabad 382470.',
     phone: bizSnapshot.phone || settings?.phone || '9662278994',
     email: bizSnapshot.email || settings?.email || 'rajsoni2962@gmail.com',
@@ -388,6 +388,7 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
               <div className="relative w-28 h-28 rounded-2xl overflow-hidden border border-amber-500/30 shadow-xs shrink-0 bg-white p-1">
                 <img
                   src={business.logoUrl || '/brand/logo.png'}
+                  crossOrigin="anonymous"
                   alt="Ashirwad Tech"
                   className="w-full h-full object-contain"
                 />
@@ -484,7 +485,7 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
           <div className="py-3">
             <table className="w-full text-left border-collapse border border-slate-300">
               <thead>
-                <tr className="bg-slate-800 text-white text-xs uppercase font-semibold">
+                <tr className="bg-[#0f172a] text-white text-xs uppercase font-semibold">
                   <th className="py-2 px-2.5 w-8 text-center border-r border-slate-600">#</th>
                   <th className="py-2 px-3 border-r border-slate-600">Item Name & Specifications</th>
                   <th className="py-2 px-2 text-center w-16 border-r border-slate-600">HSN</th>
@@ -578,6 +579,7 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
                 <div className="text-center shrink-0">
                   <img
                     src={qrCodeUrl}
+                    crossOrigin="anonymous"
                     alt="UPI QR Code"
                     className="w-16 h-16 rounded border border-slate-300 p-0.5 bg-white"
                   />
@@ -697,6 +699,7 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
               <div className="relative w-36 h-16 mx-auto">
                 <img
                   src={business.signatureUrl || '/brand/signature.jpeg'}
+                  crossOrigin="anonymous"
                   alt="Authorized Signatory"
                   className="w-full h-full object-contain"
                 />

@@ -63,10 +63,12 @@ body {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 10mm;
+    margin: 0;
   }
 
-  body {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
     -webkit-print-color-adjust: exact !important;
@@ -86,9 +88,11 @@ body {
   .print-container {
     box-shadow: none !important;
     border: none !important;
-    padding: 0 !important;
+    border-radius: 0 !important;
+    padding: 8mm 12mm !important;
     margin: 0 auto !important;
     width: 100% !important;
-    max-width: 100% !important;
+    max-width: 210mm !important;
+    min-height: 297mm !important;
   }
 }

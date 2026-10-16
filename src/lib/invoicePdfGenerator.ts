@@ -62,6 +62,7 @@ export function formatPdfCurrency(amount: number | null | undefined): string {
 export interface InvoicePdfOptions {
   logoBase64?: string;
   signatureBase64?: string;
+  qrBase64?: string;
 }
 
 /**
@@ -91,7 +92,7 @@ export async function generateInvoicePdf(
 
   const business = {
     companyName: bizSnapshot.companyName || settings?.companyName || 'ASHIRWAD TECHNOLOGIES',
-    tagline: bizSnapshot.tagline || settings?.tagline || 'Beyond Tech Limits...',
+    tagline: bizSnapshot.tagline || settings?.tagline || 'REPAIR | UPGRADE | BUILD | SERVICE',
     address: bizSnapshot.address || settings?.address || 'Ashraya 10, GST compound, new ranip, Ahmedabad 382470.',
     phone: bizSnapshot.phone || settings?.phone || '9662278994',
     email: bizSnapshot.email || settings?.email || 'rajsoni2962@gmail.com',
@@ -123,9 +124,10 @@ export async function generateInvoicePdf(
   }
   const customer = custSnapshot || invoice?.customer || {};
 
-  // Auto-resolve logo & signature if not provided
+  // Auto-resolve logo, signature & QR code if not provided
   let logoBase64 = options.logoBase64;
   let signatureBase64 = options.signatureBase64;
+  let qrBase64 = options.qrBase64;
 
   if (!logoBase64 && typeof window === 'undefined') {
     try {
@@ -178,6 +180,28 @@ export async function generateInvoicePdf(
   const grandTotal = invoice?.grandTotal || 0;
   const paidAmount = invoice?.paidAmount || 0;
   const balanceDue = invoice?.balanceDue !== undefined ? invoice.balanceDue : grandTotal - paidAmount;
+
+  // Auto-resolve UPI QR Code
+  if (!qrBase64 && business.upiId) {
+    try {
+      const upiLink = `upi://pay?pa=${encodeURIComponent(business.upiId)}&pn=${encodeURIComponent(business.companyName)}&am=${encodeURIComponent(grandTotal)}&cu=INR&tn=${encodeURIComponent(`Inv ${invoice?.invoiceNumber || ''}`)}`;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiLink)}`;
+      const qrRes = await fetch(qrUrl, { cache: 'force-cache' });
+      if (qrRes && qrRes.ok) {
+        if (typeof window !== 'undefined') {
+          const blob = await qrRes.blob();
+          const reader = new FileReader();
+          qrBase64 = await new Promise<string>((resolve) => {
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+        } else {
+          const arrayBuf = await qrRes.arrayBuffer();
+          qrBase64 = `data:image/png;base64,${Buffer.from(arrayBuf).toString('base64')}`;
+        }
+      }
+    } catch (e) {}
+  }
   const revisionNumber = invoice?.revisionNumber || 1;
   const templateVersion = invoice?.templateVersion || 'v1.0';
 
@@ -529,11 +553,16 @@ export async function generateInvoicePdf(
   // QR Code on right side of card 3
   doc.setDrawColor(203, 213, 225);
   doc.setFillColor(255, 255, 255);
-  doc.roundedRect(leftX + leftW - 20, card3Y + 2.5, 17, 17, 1, 1, 'FD');
+  doc.roundedRect(leftX + leftW - 20, card3Y + 2, 17, 17, 1, 1, 'FD');
+  if (qrBase64) {
+    try {
+      doc.addImage(qrBase64, 'PNG', leftX + leftW - 19.5, card3Y + 2.5, 16, 16);
+    } catch (e) {}
+  }
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(5);
   doc.setTextColor(100, 116, 139);
-  doc.text('Scan & Pay', leftX + leftW - 11.5, card3Y + 21.5, { align: 'center' });
+  doc.text('Scan & Pay', leftX + leftW - 11.5, card3Y + 21, { align: 'center' });
 
   // RIGHT COLUMN: Breakdown Table (x=115 to 200, width: 85)
   const rightX = 115;
@@ -737,13 +766,31 @@ export async function generateInvoicePdfFromElement(
 
   if (typeof window !== 'undefined' && element) {
     try {
+      // 1. Ensure all custom web fonts (Inter, etc.) are fully loaded before rasterizing
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+
+      // 2. Ensure all <img> tags inside element are loaded and ready
+      const imgs = Array.from(element.querySelectorAll('img'));
+      await Promise.all(
+        imgs.map((img) => {
+          if (img.complete && img.naturalHeight !== 0) return Promise.resolve(true);
+          return new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(false);
+            setTimeout(() => resolve(false), 2000);
+          });
+        })
+      );
+
       const html2canvas = (await import('html2canvas')).default;
 
-      // Capture at scale 2 for high-resolution (300-DPI equivalent) crisp text
+      // Capture at scale 2.5 for crisp 300-DPI equivalent text, logo, QR code, and borders
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 2.5,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         logging: false,
         backgroundColor: '#ffffff',
         windowWidth: 1200, // Enforce desktop viewport so columns never collapse on mobile
