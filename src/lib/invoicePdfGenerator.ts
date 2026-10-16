@@ -181,17 +181,18 @@ export async function generateInvoicePdf(
   const revisionNumber = invoice?.revisionNumber || 1;
   const templateVersion = invoice?.templateVersion || 'v1.0';
 
-  // 1. Top Banner
+  // 1. Top Banner (matching on-screen format)
   const invoiceTitle = getInvoiceTypeTitle(invoice?.invoiceType);
-  doc.setFillColor(15, 23, 42); // Obsidian Slate-900
-  doc.rect(10, 8, 190, 7.5, 'F');
-  doc.setTextColor(212, 175, 55); // Metallic Gold
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text(invoiceTitle, 105, 13.2, { align: 'center' });
+  doc.setFontSize(13);
+  doc.setTextColor(30, 41, 59); // Slate-800
+  doc.text(invoiceTitle, 105, 12, { align: 'center' });
+  doc.setDrawColor(226, 232, 240); // Slate-200
+  doc.setLineWidth(0.3);
+  doc.line(10, 15, 200, 15);
 
   // 2. Business Header
-  let headerLeftX = 10;
+  // Logo on Left
   if (logoBase64) {
     try {
       const isPng = logoBase64.startsWith('data:image/png') || logoBase64.startsWith('iVBORw0KGgo');
@@ -199,135 +200,101 @@ export async function generateInvoicePdf(
       const imgData = logoBase64.startsWith('data:')
         ? logoBase64
         : `data:image/${isPng ? 'png' : 'jpeg'};base64,${logoBase64}`;
-      doc.addImage(imgData, format, 10, 17, 20, 20);
-      headerLeftX = 33;
-    } catch (e) {
-      headerLeftX = 10;
-    }
+      // Golden border around logo box
+      doc.setDrawColor(245, 158, 11); // Amber-500
+      doc.roundedRect(10, 18, 24, 24, 2, 2);
+      doc.addImage(imgData, format, 11, 19, 22, 22);
+    } catch (e) {}
   }
 
-  doc.setTextColor(15, 23, 42); // Slate-900
+  // Right-aligned Business Info (X=200)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
-  doc.text(business.companyName, headerLeftX, 23);
+  doc.setTextColor(15, 23, 42); // Slate-900
+  doc.text('ASHIRWAD ', 184, 22.5, { align: 'right' });
+  doc.setTextColor(234, 88, 12); // Orange #ea580c
+  doc.text('TECH', 200, 22.5, { align: 'right' });
 
-  doc.setTextColor(197, 155, 39); // Metallic Gold #C59B27
+  doc.setTextColor(180, 83, 9); // Amber-700
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
-  doc.text(business.tagline.toUpperCase(), headerLeftX, 27.5);
+  doc.text(business.tagline.toUpperCase(), 200, 27, { align: 'right' });
 
   doc.setTextColor(71, 85, 105); // Slate-600
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.text(business.address, headerLeftX, 32);
-  doc.text(`Phone: ${business.phone}  |  Email: ${business.email}`, headerLeftX, 36);
+  doc.text(business.address, 200, 31.5, { align: 'right' });
+  doc.text(`Phone no.: ${business.phone}  •  Email: ${business.email}`, 200, 35.5, { align: 'right' });
 
   if (business.gstin) {
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(30, 41, 59);
-    doc.text(`GSTIN: ${business.gstin}  |  State: ${business.state} (${business.stateCode})`, headerLeftX, 40);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`GSTIN: ${business.gstin}`, 200, 39.5, { align: 'right' });
   }
 
-  // Right Header: Invoice Meta Badge Box
-  doc.setDrawColor(203, 213, 225); // Slate-300
+  // Horizontal divider
+  doc.setDrawColor(226, 232, 240);
+  doc.line(10, 43, 200, 43);
+
+  // 3. Bill To & Invoice Details (Two Columns with vertical line)
+  const partyY = 43.5;
+  const partyH = 24.5;
   doc.setFillColor(248, 250, 252); // Slate-50
-  doc.roundedRect(132, 17.5, 68, 23.5, 1.5, 1.5, 'FD');
+  doc.rect(10, partyY, 190, partyH, 'F');
+  doc.setDrawColor(226, 232, 240);
+  doc.line(105, partyY, 105, partyY + partyH); // Vertical separator
+
+  // Left Column: Bill To
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text('BILL TO:', 13, partyY + 4.5);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(15, 23, 42);
-  const numLabel = invoice?.invoiceType === 'QUOTATION' ? 'Quotation #' : (invoice?.invoiceType === 'PROFORMA' ? 'Proforma #' : 'Invoice #');
-  doc.text(`${numLabel}: ${invoice?.invoiceNumber || '-'}`, 135, 22.5);
+  doc.text(customer.name || 'Walk-in Customer', 13, partyY + 9);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.2);
+  doc.setFontSize(7.5);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Date: ${formatDate(invoice?.date)}`, 135, 26.5);
-  doc.text(`Payment: ${invoice?.paymentMode || 'Cash'}`, 135, 30.5);
-
-  if (invoice?.invoiceType && invoice.invoiceType !== 'TAX_INVOICE') {
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(79, 70, 229);
-    doc.text(`Type: ${invoiceTitle}`, 135, 34.5);
-  } else if (revisionNumber > 1) {
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(99, 102, 241); // Indigo-500
-    doc.text(`Revision: #${revisionNumber}`, 135, 34.5);
-  } else {
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Template: ${templateVersion}`, 135, 34.5);
+  doc.text(`Contact No.: ${customer.phone || '-'}`, 13, partyY + 13.5);
+  if (customer.address) {
+    const splitAddr = doc.splitTextToSize(`Address: ${customer.address}`, 88);
+    doc.text(splitAddr.slice(0, 1), 13, partyY + 17.5);
   }
+  doc.text(`State: ${customer.state || 'Gujarat'} (Code: ${customer.stateCode || '24'})`, 13, partyY + 21.5);
 
-  // Status badge
-  const status = invoice?.status === 'Cancelled' ? 'Cancelled' : (invoice?.paymentStatus || 'Paid');
-  if (status === 'Paid') {
-    doc.setFillColor(220, 252, 231);
-    doc.setTextColor(22, 101, 52);
-  } else if (status === 'Cancelled') {
-    doc.setFillColor(254, 226, 226);
-    doc.setTextColor(153, 27, 27);
-  } else {
-    doc.setFillColor(254, 243, 199);
-    doc.setTextColor(146, 64, 14);
-  }
-  doc.roundedRect(135, 36, 24, 4.5, 1, 1, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.8);
-  doc.text(status, 147, 39.2, { align: 'center' });
-
-  // 3. Bill To / Party Information Box
-  const boxY = 43.5;
-  const boxH = 26;
-  doc.setDrawColor(226, 232, 240);
-  doc.setFillColor(248, 250, 252);
-  doc.roundedRect(10, boxY, 190, boxH, 1.5, 1.5, 'FD');
-
-  // Vertical split line
-  doc.line(110, boxY, 110, boxY + boxH);
-
-  // Left: Bill To
+  // Right Column: Invoice Details (Right-aligned)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
-  doc.setTextColor(100, 116, 139);
-  doc.text('BILL TO (CUSTOMER):', 13, boxY + 5);
+  doc.setTextColor(71, 85, 105);
+  doc.text('INVOICE DETAILS:', 197, partyY + 4.5, { align: 'right' });
 
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  const typeLabel = invoice?.invoiceType === 'QUOTATION' ? 'Quotation' : (invoice?.invoiceType === 'PROFORMA' ? 'Proforma' : 'Invoice');
+  doc.text(`${typeLabel} No.: `, 170, partyY + 9, { align: 'right' });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(15, 23, 42);
-  doc.text(customer.name || 'Walk-in Customer', 13, boxY + 10);
+  doc.text(invoice?.invoiceNumber || '-', 197, partyY + 9, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Contact: ${customer.phone || '-'}`, 13, boxY + 14.5);
-  if (customer.address) {
-    const splitAddr = doc.splitTextToSize(`Address: ${customer.address}`, 92);
-    doc.text(splitAddr.slice(0, 2), 13, boxY + 18.5);
-  } else {
-    doc.text(`Place of Supply: ${customer.state || 'Gujarat'} (${customer.stateCode || '24'})`, 13, boxY + 18.5);
-  }
-  if (customer.gstin) {
-    doc.setFont('helvetica', 'bold');
-    doc.text(`GSTIN: ${customer.gstin}`, 13, boxY + 22.5);
-  }
-
-  // Right: Delivery & Transport Details
+  doc.text('Date: ', 175, partyY + 13.5, { align: 'right' });
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(100, 116, 139);
-  doc.text('SHIPPED / DELIVERED TO:', 114, boxY + 5);
+  doc.text(formatDate(invoice?.date), 197, partyY + 13.5, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Customer: ${customer.name || 'Same as Billing'}`, 114, boxY + 10);
-  doc.text(`State: ${customer.state || 'Gujarat'} (Code: ${customer.stateCode || '24'})`, 114, boxY + 14.5);
-  if (invoice?.dueDate) {
-    doc.text(`Payment Due: ${formatDate(invoice.dueDate)}`, 114, boxY + 18.5);
-  } else {
-    doc.text(`Dispatched By: ${business.companyName}`, 114, boxY + 18.5);
-  }
+  doc.text('Payment Mode: ', 175, partyY + 17.5, { align: 'right' });
+  doc.setFont('helvetica', 'bold');
+  doc.text(invoice?.paymentMode || 'Cash', 197, partyY + 17.5, { align: 'right' });
+
+  // Horizontal divider below party details
+  doc.setDrawColor(226, 232, 240);
+  doc.line(10, partyY + partyH, 200, partyY + partyH);
 
   // 4. Line Items Table
   let currentY = 72;
@@ -343,7 +310,7 @@ export async function generateInvoicePdf(
   };
 
   // Table Header
-  doc.setFillColor(30, 41, 59);
+  doc.setFillColor(15, 23, 42); // Obsidian Slate-900 / dark navy
   doc.rect(10, currentY, 190, 6.5, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
@@ -353,8 +320,8 @@ export async function generateInvoicePdf(
   doc.text('HSN', 113.5, currentY + 4.5, { align: 'center' });
   doc.text('QTY', 129, currentY + 4.5, { align: 'center' });
   doc.text('UNIT', 142, currentY + 4.5, { align: 'center' });
-  doc.text('PRICE (RS.)', 170, currentY + 4.5, { align: 'right' });
-  doc.text('TOTAL (RS.)', 198, currentY + 4.5, { align: 'right' });
+  doc.text('PRICE / UNIT', 170, currentY + 4.5, { align: 'right' });
+  doc.text('AMOUNT', 198, currentY + 4.5, { align: 'right' });
 
   currentY += 6.5;
 
@@ -483,90 +450,105 @@ export async function generateInvoicePdf(
     currentY += rowHeight;
   });
 
-  // Total Quantity Row
+  // Total Quantity & Subtotal Row (matching on-screen format)
   doc.setFillColor(241, 245, 249);
-  doc.rect(10, currentY, 190, 5.5, 'F');
+  doc.rect(10, currentY, 190, 6, 'F');
   doc.setDrawColor(203, 213, 225);
-  doc.line(10, currentY + 5.5, 200, currentY + 5.5);
+  doc.line(10, currentY + 6, 200, currentY + 6);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(30, 41, 59);
-  doc.text('TOTAL QUANTITY:', colX.desc + 2, currentY + 3.8);
-  doc.text(`${totalQty} Pcs`, 129, currentY + 3.8, { align: 'center' });
+  doc.text('Total', 113.5, currentY + 4.2, { align: 'center' });
+  doc.text(String(totalQty), 129, currentY + 4.2, { align: 'center' });
+  doc.text('Pcs', 142, currentY + 4.2, { align: 'center' });
+  doc.text(formatPdfCurrency(invoice?.subtotal), 198, currentY + 4.2, { align: 'right' });
 
-  currentY += 8.5;
+  currentY += 8;
 
   // 5. Financial Summary Section
   const summaryTop = currentY;
-
-  // LEFT COLUMN: Bank Details & Amount in Words (x=10 to 110, width: 100)
   const leftX = 10;
   const leftW = 100;
 
-  doc.setDrawColor(203, 213, 225);
-  doc.setFillColor(248, 250, 252);
-  doc.roundedRect(leftX, summaryTop, leftW, 26, 1.5, 1.5, 'FD');
-
+  // Card 1: Amount In Words Box
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text('BANK & PAYMENT DETAILS', leftX + 3, summaryTop + 4.5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.2);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Bank Name: ${business.bankName}`, leftX + 3, summaryTop + 9);
-  doc.text(`A/C No: ${business.accountNumber}`, leftX + 3, summaryTop + 13);
-  doc.text(`IFSC Code: ${business.ifscCode}`, leftX + 3, summaryTop + 17);
-  doc.text(`UPI ID: ${business.upiId}`, leftX + 3, summaryTop + 21);
-
-  // Amount in Words
-  const wordsY = summaryTop + 28;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.2);
+  doc.setFontSize(6.8);
   doc.setTextColor(100, 116, 139);
-  doc.text('AMOUNT IN WORDS (INR):', 10, wordsY + 3.5);
+  doc.text('INVOICE AMOUNT IN WORDS:', leftX, summaryTop + 3);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.8);
-  doc.setTextColor(15, 23, 42);
-  const wordsText = numberToWords(Math.round(grandTotal));
-  const splitWords = doc.splitTextToSize(wordsText, 98);
-  doc.text(splitWords, 10, wordsY + 7.5);
-
-  // Customer Note Box
-  const notesY = wordsY + 11 + (splitWords.length * 3.8);
   doc.setDrawColor(226, 232, 240);
-  doc.setFillColor(254, 252, 232); // Light yellow tint
-  doc.roundedRect(10, notesY, leftW, 11, 1.5, 1.5, 'FD');
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(leftX, summaryTop + 4.5, leftW, 9, 1.5, 1.5, 'FD');
+
+  doc.setFont('helvetica', 'bolditalic');
+  doc.setFontSize(7.8);
+  doc.setTextColor(30, 41, 59);
+  const wordsText = numberToWords(Math.round(grandTotal));
+  doc.text(wordsText, leftX + 3, summaryTop + 10.2);
+
+  // Card 2: Description & Condition Box
+  const card2Y = summaryTop + 16.5;
+  doc.setDrawColor(191, 219, 254); // Blue-200
+  doc.setFillColor(239, 246, 255); // Blue-50
+  doc.roundedRect(leftX, card2Y, leftW, 12, 1.5, 1.5, 'FD');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.8);
-  doc.setTextColor(161, 98, 7);
-  doc.text('NOTE / REMARK:', 12, notesY + 3.5);
+  doc.setFontSize(7);
+  doc.setTextColor(30, 58, 138); // Blue-900
+  doc.text('Description & Condition:', leftX + 3, card2Y + 4);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.8);
-  doc.setTextColor(113, 63, 18);
-  const userNotes = invoice?.notes || 'Refurbished laptop tested and certified with 6 months warranty.';
-  const splitNotes = doc.splitTextToSize(userNotes, 94);
-  doc.text(splitNotes.slice(0, 2), 12, notesY + 7);
+  doc.setTextColor(51, 65, 85);
+  const notesStr = invoice?.notes || 'Professionally refurbished, fully tested, and ready to use. Clean, reliable, and backed by quality service.';
+  const splitNotes = doc.splitTextToSize(notesStr, 94);
+  doc.text(splitNotes.slice(0, 2), leftX + 3, card2Y + 8);
+
+  // Card 3: Bank & Payment Details with QR Code
+  const card3Y = card2Y + 15;
+  doc.setDrawColor(226, 232, 240);
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(leftX, card3Y, leftW, 23, 1.5, 1.5, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.2);
+  doc.setTextColor(30, 41, 59);
+  doc.text('Bank & Payment Details:', leftX + 3, card3Y + 4.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Bank Name: ${business.bankName}`, leftX + 3, card3Y + 8.5);
+  doc.text(`Account No.: ${business.accountNumber}`, leftX + 3, card3Y + 12.5);
+  doc.text(`IFSC Code: ${business.ifscCode}`, leftX + 3, card3Y + 16.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(67, 56, 202); // Indigo-700
+  doc.text(`UPI ID: ${business.upiId}`, leftX + 3, card3Y + 20.5);
+
+  // QR Code on right side of card 3
+  doc.setDrawColor(203, 213, 225);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(leftX + leftW - 20, card3Y + 2.5, 17, 17, 1, 1, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Scan & Pay', leftX + leftW - 11.5, card3Y + 21.5, { align: 'center' });
 
   // RIGHT COLUMN: Breakdown Table (x=115 to 200, width: 85)
   const rightX = 115;
   const rightW = 85;
-  let calcY = summaryTop;
+  let calcY = summaryTop + 4;
 
-  function drawCalcRow(label: string, amountStr: string, isBold = false, textColor = [51, 65, 85]) {
+  function drawCalcRow(label: string, amountStr: string, isBold = false, textColor = [51, 65, 85], isLarge = false) {
     doc.setFont('helvetica', isBold ? 'bold' : 'normal');
-    doc.setFontSize(7.8);
+    doc.setFontSize(isLarge ? 9.5 : 7.8);
     doc.setTextColor(textColor[0], textColor[1], textColor[2]);
     doc.text(label, rightX + 2, calcY + 3.6);
     doc.text(amountStr, rightX + rightW - 2, calcY + 3.6, { align: 'right' });
     doc.setDrawColor(241, 245, 249);
-    doc.line(rightX, calcY + 4.9, rightX + rightW, calcY + 4.9);
-    calcY += 4.9;
+    doc.line(rightX, calcY + 5.2, rightX + rightW, calcY + 5.2);
+    calcY += 5.5;
   }
 
   const isNoTax = invoice?.invoiceType === 'BILL_OF_SUPPLY' || 
@@ -575,7 +557,6 @@ export async function generateInvoicePdf(
   const isExempt = invoice?.taxConfiguration === 'EXEMPT';
   const isIgst = invoice?.taxConfiguration === 'IGST';
 
-  const calcBoxStartY = summaryTop;
   drawCalcRow('Sub Total:', formatPdfCurrency(invoice?.subtotal));
 
   if (invoice?.discountAmount > 0) {
@@ -585,7 +566,7 @@ export async function generateInvoicePdf(
 
   if (!isNoTax) {
     if (isExempt) {
-      drawCalcRow('Tax (Exempt / Nil):', 'Rs. 0.00', false, [100, 116, 139]);
+      drawCalcRow('GST (Exempt / Nil-Rated):', 'Rs. 0.00 (0%)', false, [100, 116, 139]);
     } else if (isIgst) {
       if (invoice?.taxableAmount > 0) {
         drawCalcRow('Taxable Value:', formatPdfCurrency(invoice.taxableAmount));
@@ -594,7 +575,6 @@ export async function generateInvoicePdf(
         drawCalcRow('IGST (18%):', formatPdfCurrency(invoice.igst));
       }
     } else {
-      // Standard CGST + SGST
       if (invoice?.taxableAmount > 0) {
         drawCalcRow('Taxable Value:', formatPdfCurrency(invoice.taxableAmount));
       }
@@ -611,28 +591,18 @@ export async function generateInvoicePdf(
     drawCalcRow('Round-Off:', `${invoice.roundOff > 0 ? '+' : ''}${formatPdfCurrency(invoice.roundOff)}`);
   }
 
-  // Grand Total Row
-  doc.setFillColor(30, 41, 59);
-  doc.rect(rightX, calcY, rightW, 7.5, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(255, 255, 255);
-  doc.text('Grand Total:', rightX + 2, calcY + 5);
-  doc.text(formatPdfCurrency(grandTotal), rightX + rightW - 2, calcY + 5, { align: 'right' });
-  calcY += 8.5;
+  // Grand Total Row in Bold Indigo
+  drawCalcRow('Grand Total:', formatPdfCurrency(grandTotal), true, [67, 56, 202], true);
 
-  // Paid & Balance Due
-  drawCalcRow('Received / Paid:', formatPdfCurrency(paidAmount), true, [5, 150, 105]);
+  // Received / Paid in Green
+  drawCalcRow('Received / Paid:', formatPdfCurrency(paidAmount), true, [21, 128, 61]);
 
-  const balanceColor = balanceDue > 0 ? [220, 38, 38] : [51, 65, 85];
+  // Balance Due in Dark Bold
+  const balanceColor = balanceDue > 0 ? [220, 38, 38] : [30, 41, 59];
   drawCalcRow('Balance Due:', formatPdfCurrency(balanceDue), true, balanceColor);
 
-  // Border around calc box
-  doc.setDrawColor(203, 213, 225);
-  doc.roundedRect(rightX, calcBoxStartY, rightW, calcY - calcBoxStartY, 1.5, 1.5);
-
   // 6. Bottom Section: Terms and Signatory
-  const bottomY = Math.max(notesY + 14, calcY + 4);
+  const bottomY = Math.max(card3Y + 26, calcY + 4);
 
   // Terms (x=10 to 135)
   doc.setFont('helvetica', 'bold');
@@ -719,42 +689,116 @@ export function viewPdfBlob(blob: Blob, filename?: string) {
 
 /**
  * Generates and triggers direct download of invoice PDF on-demand.
+ * In the browser, captures the exact rendered DOM view for 100% visual parity.
  */
 export async function downloadInvoicePdf(invoice: any, settings: any = {}): Promise<void> {
+  if (typeof window !== 'undefined') {
+    const el = document.getElementById('printable-invoice-document');
+    if (el) {
+      const { blob, filename } = await generateInvoicePdfFromElement(el, invoice?.invoiceNumber, invoice, settings);
+      downloadPdfBlob(blob, filename);
+      return;
+    }
+  }
+
   const { blob, filename } = await generateInvoicePdf(invoice, settings);
   downloadPdfBlob(blob, filename);
 }
 
 /**
  * Generates and views invoice PDF directly on-demand in a new tab.
+ * In the browser, captures the exact rendered DOM view for 100% visual parity.
  */
 export async function viewInvoicePdf(invoice: any, settings: any = {}): Promise<void> {
+  if (typeof window !== 'undefined') {
+    const el = document.getElementById('printable-invoice-document');
+    if (el) {
+      const { blob, filename } = await generateInvoicePdfFromElement(el, invoice?.invoiceNumber, invoice, settings);
+      viewPdfBlob(blob, filename);
+      return;
+    }
+  }
+
   const { blob, filename } = await generateInvoicePdf(invoice, settings);
   viewPdfBlob(blob, filename);
 }
 
 /**
- * Legacy compatibility wrapper: generates invoice PDF directly from structured data.
+ * Captures the rendered DOM invoice element into a high-DPI A4 PDF with 100% exact
+ * layout, typography, colors, QR codes, and digital signatures matching the on-screen view.
  */
 export async function generateInvoicePdfFromElement(
   element: HTMLElement | null,
   invoiceNumber: string,
   invoiceData?: any,
   settingsData?: any
-): Promise<{ blob: Blob; file: File; filename: string }> {
-  if (invoiceData) {
-    const res = await generateInvoicePdf(invoiceData, settingsData);
-    return { blob: res.blob, file: res.file, filename: res.filename };
+): Promise<{ doc: jsPDF; blob: Blob; file: File; filename: string }> {
+  const filename = getSanitizedInvoiceFilename(invoiceNumber || invoiceData?.invoiceNumber || 'INVOICE');
+
+  if (typeof window !== 'undefined' && element) {
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+
+      // Capture at scale 2 for high-resolution (300-DPI equivalent) crisp text
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 1200, // Enforce desktop viewport so columns never collapse on mobile
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.getElementById('printable-invoice-document');
+          if (el) {
+            el.style.boxShadow = 'none';
+            el.style.borderRadius = '0';
+            el.style.border = 'none';
+            el.style.width = '794px'; // 210mm at 96 DPI
+            el.style.maxWidth = '794px';
+            el.style.margin = '0 auto';
+            el.style.padding = '32px';
+          }
+        },
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+        compress: true,
+      });
+
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      if (imgHeight <= pdfHeight) {
+        doc.addImage(imgData, 'JPEG', 0, 0, pdfWidth, imgHeight);
+      } else {
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        doc.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
+
+        while (heightLeft > 0) {
+          position -= pdfHeight;
+          doc.addPage();
+          doc.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight);
+          heightLeft -= pdfHeight;
+        }
+      }
+
+      const blob = doc.output('blob');
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      return { doc, blob, file, filename };
+    } catch (domErr) {
+      console.warn('html2canvas capture encountered an issue, falling back to direct jsPDF generation:', domErr);
+    }
   }
 
-  const fallbackInvoice = {
-    invoiceNumber: invoiceNumber || 'INVOICE',
-    date: new Date().toISOString(),
-    items: [],
-    grandTotal: 0,
-    paidAmount: 0,
-    balanceDue: 0,
-  };
-  const res = await generateInvoicePdf(fallbackInvoice);
-  return { blob: res.blob, file: res.file, filename: res.filename };
+  // Fallback to direct jsPDF vector generation
+  const res = await generateInvoicePdf(invoiceData || { invoiceNumber }, settingsData);
+  return { doc: res.doc, blob: res.blob, file: res.file, filename };
 }

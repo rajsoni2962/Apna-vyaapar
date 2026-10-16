@@ -24,7 +24,13 @@ import WhatsAppShareModal from '@/components/invoice/WhatsAppShareModal';
 import InvoiceAuditHistoryModal from '@/components/invoice/InvoiceAuditHistoryModal';
 import InvoiceVersionCompareModal from '@/components/invoice/InvoiceVersionCompareModal';
 
-import { downloadInvoicePdf, viewInvoicePdf } from '@/lib/invoicePdfGenerator';
+import {
+  downloadInvoicePdf,
+  viewInvoicePdf,
+  generateInvoicePdfFromElement,
+  downloadPdfBlob,
+  viewPdfBlob,
+} from '@/lib/invoicePdfGenerator';
 
 interface InvoicePrintViewProps {
   invoice: any;
@@ -97,6 +103,16 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
   const handleViewPdf = async () => {
     setViewing(true);
     try {
+      if (printRef.current) {
+        const { blob, filename } = await generateInvoicePdfFromElement(
+          printRef.current,
+          currentInvoice.invoiceNumber,
+          currentInvoice,
+          business
+        );
+        viewPdfBlob(blob, filename);
+        return;
+      }
       await viewInvoicePdf(currentInvoice, business);
     } catch (err: any) {
       console.error('Client PDF view error, using server fallback:', err);
@@ -109,6 +125,16 @@ export default function InvoicePrintView({ invoice, settings }: InvoicePrintView
   const handleDownload = async () => {
     setDownloading(true);
     try {
+      if (printRef.current) {
+        const { blob, filename } = await generateInvoicePdfFromElement(
+          printRef.current,
+          currentInvoice.invoiceNumber,
+          currentInvoice,
+          business
+        );
+        downloadPdfBlob(blob, filename);
+        return;
+      }
       await downloadInvoicePdf(currentInvoice, business);
     } catch (err: any) {
       console.error('Client PDF generation error, using server fallback:', err);
