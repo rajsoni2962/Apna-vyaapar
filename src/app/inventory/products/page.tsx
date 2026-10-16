@@ -31,25 +31,25 @@ export default function ProductsPage() {
   const [formData, setFormData] = useState<any>({
     name: '',
     productType: 'PHYSICAL', // PHYSICAL or SERVICE
-    brand: 'Dell',
+    brand: '',
     model: '',
-    category: 'Laptop',
-    cpu: 'Intel Core i5',
-    generation: '10th Gen',
-    ram: '8GB',
-    ramType: 'DDR4',
-    storage: '256GB SSD',
-    storageType: 'NVMe SSD',
-    gpu: 'Intel UHD Graphics',
-    displaySize: '14 Inch',
-    condition: 'Refurbished Grade A',
+    category: 'Accessories',
+    cpu: '',
+    generation: '',
+    ram: '',
+    ramType: '',
+    storage: '',
+    storageType: '',
+    gpu: '',
+    displaySize: '',
+    condition: 'Brand New',
     hsn: '8471',
     gstPercent: 18,
-    purchasePrice: 18000,
-    sellingPrice: 24000,
-    minStock: 2,
+    purchasePrice: 0,
+    sellingPrice: 0,
+    minStock: 1,
     initialStock: 1,
-    warranty: '6 Months',
+    warranty: '1 Year',
     notes: '',
   });
 
@@ -78,10 +78,28 @@ export default function ProductsPage() {
       const url = editProduct ? `/api/products/${editProduct.id}` : '/api/products';
       const method = editProduct ? 'PUT' : 'POST';
 
+      const isAcc = formData.category === 'Accessories';
+      const payload = {
+        ...formData,
+        ...(isAcc
+          ? {
+              cpu: null,
+              generation: null,
+              ram: null,
+              ramType: null,
+              storage: null,
+              storageType: null,
+              gpu: null,
+              displaySize: null,
+              condition: formData.condition || 'Brand New',
+            }
+          : {}),
+      };
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json();
@@ -116,28 +134,29 @@ export default function ProductsPage() {
   const openEdit = (p: any) => {
     setEditProduct(p);
     const isService = p.productType === 'SERVICE' || p.category?.toLowerCase() === 'service';
+    const isAcc = p.category === 'Accessories';
     setFormData({
       name: p.name,
       productType: isService ? 'SERVICE' : (p.productType || 'PHYSICAL'),
       brand: p.brand || '',
       model: p.model || '',
-      category: p.category || (isService ? 'Repair Service' : 'Laptop'),
-      cpu: p.cpu || '',
-      generation: p.generation || '',
-      ram: p.ram || '',
-      ramType: p.ramType || '',
-      storage: p.storage || '',
-      storageType: p.storageType || '',
-      gpu: p.gpu || '',
-      displaySize: p.displaySize || '',
-      condition: p.condition || (isService ? 'Service' : 'Refurbished Grade A'),
+      category: p.category || (isService ? 'Repair Service' : 'Accessories'),
+      cpu: isAcc ? '' : (p.cpu || ''),
+      generation: isAcc ? '' : (p.generation || ''),
+      ram: isAcc ? '' : (p.ram || ''),
+      ramType: isAcc ? '' : (p.ramType || ''),
+      storage: isAcc ? '' : (p.storage || ''),
+      storageType: isAcc ? '' : (p.storageType || ''),
+      gpu: isAcc ? '' : (p.gpu || ''),
+      displaySize: isAcc ? '' : (p.displaySize || ''),
+      condition: p.condition || (isService ? 'Service' : isAcc ? 'Brand New' : 'Refurbished Grade A'),
       hsn: p.hsn || (isService ? '9987' : '8471'),
       gstPercent: p.gstPercent || 18,
       purchasePrice: p.purchasePrice || 0,
       sellingPrice: p.sellingPrice || 0,
       minStock: isService ? 0 : (p.minStock || 1),
       initialStock: isService ? 0 : (p.currentStock || 0),
-      warranty: p.warranty || (isService ? '30 Days Service Warranty' : '6 Months'),
+      warranty: p.warranty || (isService ? '30 Days Service Warranty' : '1 Year'),
       notes: p.notes || '',
     });
     setShowAddModal(true);
@@ -176,25 +195,25 @@ export default function ProductsPage() {
             setEditProduct(null);
             setFormData({
               name: '',
-              brand: 'Dell',
+              brand: '',
               model: '',
-              category: 'Laptop',
-              cpu: 'Intel Core i5',
-              generation: '10th Gen',
-              ram: '8GB',
-              ramType: 'DDR4',
-              storage: '256GB SSD',
-              storageType: 'NVMe SSD',
-              gpu: 'Intel UHD Graphics',
-              displaySize: '14 Inch',
-              condition: 'Refurbished Grade A',
+              category: 'Accessories',
+              cpu: '',
+              generation: '',
+              ram: '',
+              ramType: '',
+              storage: '',
+              storageType: '',
+              gpu: '',
+              displaySize: '',
+              condition: 'Brand New',
               hsn: '8471',
               gstPercent: 18,
-              purchasePrice: 18000,
-              sellingPrice: 24000,
-              minStock: 2,
+              purchasePrice: 0,
+              sellingPrice: 0,
+              minStock: 1,
               initialStock: 1,
-              warranty: '6 Months',
+              warranty: '1 Year',
               notes: '',
             });
             setShowAddModal(true);
@@ -444,12 +463,35 @@ export default function ProductsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-slate-600 font-semibold mb-1">Category</label>
                   <select
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(e) => {
+                      const newCat = e.target.value;
+                      const isComputer = newCat === 'Laptop' || newCat === 'Desktop' || newCat === 'Custom PC';
+                      const isAcc = newCat === 'Accessories';
+                      setFormData((prev: any) => ({
+                        ...prev,
+                        category: newCat,
+                        ...(isAcc || !isComputer
+                          ? {
+                              cpu: '',
+                              generation: '',
+                              ram: '',
+                              ramType: '',
+                              storage: '',
+                              storageType: '',
+                              gpu: '',
+                              displaySize: '',
+                            }
+                          : {}),
+                        ...(isAcc && (!prev.condition || prev.condition === 'Refurbished Grade A')
+                          ? { condition: 'Brand New' }
+                          : {}),
+                      }));
+                    }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl"
                   >
                     {formData.productType === 'SERVICE' ? (
@@ -462,11 +504,11 @@ export default function ProductsPage() {
                       </>
                     ) : (
                       <>
+                        <option value="Accessories">Accessories</option>
                         <option value="Laptop">Laptop</option>
                         <option value="Desktop">Desktop</option>
                         <option value="SSD">SSD</option>
                         <option value="RAM">RAM</option>
-                        <option value="Accessories">Accessories</option>
                         <option value="Custom PC">Custom PC</option>
                         <option value="Motherboard">Motherboard</option>
                         <option value="GPU">GPU</option>
@@ -484,7 +526,7 @@ export default function ProductsPage() {
                     type="text"
                     value={formData.brand}
                     onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                    placeholder={formData.productType === 'SERVICE' ? 'e.g. In-Store / On-Site' : 'e.g. Dell, HP, Lenovo'}
+                    placeholder={formData.productType === 'SERVICE' ? 'e.g. In-Store / On-Site' : 'e.g. Dell, HP, Lenovo, Hammok'}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl"
                   />
                 </div>
@@ -497,17 +539,38 @@ export default function ProductsPage() {
                     type="text"
                     value={formData.model}
                     onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                    placeholder={formData.productType === 'SERVICE' ? 'e.g. All Laptops / General' : 'e.g. Latitude 5410'}
+                    placeholder={formData.productType === 'SERVICE' ? 'e.g. All Laptops / General' : 'e.g. Wireless Combo / Latitude 5410'}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-slate-600 font-semibold mb-1">Condition</label>
+                  <select
+                    value={formData.condition}
+                    onChange={(e) => setFormData({ ...formData, condition: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                  >
+                    {formData.productType === 'SERVICE' ? (
+                      <option value="Service">Service</option>
+                    ) : (
+                      <>
+                        <option value="Brand New">Brand New</option>
+                        <option value="Refurbished Grade A">Refurbished Grade A</option>
+                        <option value="Refurbished Grade B">Refurbished Grade B</option>
+                        <option value="Open Box">Open Box</option>
+                        <option value="Used">Used</option>
+                      </>
+                    )}
+                  </select>
+                </div>
               </div>
 
-              {/* Laptop Specs - Only for Physical Laptops */}
-              {formData.productType !== 'SERVICE' && formData.category === 'Laptop' && (
+              {/* Hardware Specs - Only for Complete Computer Systems (Laptop, Desktop, Custom PC) - NEVER for Accessories */}
+              {formData.productType !== 'SERVICE' && (formData.category === 'Laptop' || formData.category === 'Desktop' || formData.category === 'Custom PC') && (
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                   <span className="text-slate-700 font-bold block text-[11px] uppercase tracking-wider">
-                    Detailed Laptop Specifications
+                    Detailed {formData.category} Specifications
                   </span>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div>

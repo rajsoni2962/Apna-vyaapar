@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { validateAndSanitizeProduct } from '@/lib/product-validation';
 
 export async function GET(
   request: Request,
@@ -42,31 +43,34 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const isService = body.productType === 'SERVICE' || body.category?.toLowerCase() === 'service';
-    const finalProductType = isService ? 'SERVICE' : (body.productType || 'PHYSICAL');
+    // Apply category-specific validation & sanitization (prevents computer specs on accessories)
+    const { sanitized } = validateAndSanitizeProduct(body);
+
+    const isService = sanitized.productType === 'SERVICE' || sanitized.category?.toLowerCase() === 'service';
+    const finalProductType = isService ? 'SERVICE' : 'PHYSICAL';
 
     const updateData: any = {
-      name: body.name?.trim(),
+      name: sanitized.name?.trim(),
       productType: finalProductType,
-      brand: isService ? null : (body.brand || null),
-      model: isService ? null : (body.model || null),
-      category: body.category || (isService ? 'Service' : 'Laptop'),
-      cpu: isService ? null : (body.cpu || null),
-      generation: isService ? null : (body.generation || null),
-      ram: isService ? null : (body.ram || null),
-      ramType: isService ? null : (body.ramType || null),
-      storage: isService ? null : (body.storage || null),
-      storageType: isService ? null : (body.storageType || null),
-      gpu: isService ? null : (body.gpu || null),
-      displaySize: isService ? null : (body.displaySize || null),
-      condition: isService ? 'Service' : (body.condition || 'Refurbished Grade A'),
-      hsn: body.hsn || (isService ? '9987' : '8471'),
-      gstPercent: parseFloat(body.gstPercent) !== undefined ? parseFloat(body.gstPercent) : 18,
-      purchasePrice: parseFloat(body.purchasePrice) || 0,
-      sellingPrice: parseFloat(body.sellingPrice) || 0,
-      minStock: isService ? 0 : (parseInt(body.minStock) || 1),
-      warranty: body.warranty || (isService ? '30 Days Service Warranty' : '6 Months'),
-      notes: body.notes || null,
+      brand: isService ? null : (sanitized.brand || null),
+      model: isService ? null : (sanitized.model || null),
+      category: sanitized.category || (isService ? 'Service' : 'Laptop'),
+      cpu: isService ? null : (sanitized.cpu || null),
+      generation: isService ? null : (sanitized.generation || null),
+      ram: isService ? null : (sanitized.ram || null),
+      ramType: isService ? null : (sanitized.ramType || null),
+      storage: isService ? null : (sanitized.storage || null),
+      storageType: isService ? null : (sanitized.storageType || null),
+      gpu: isService ? null : (sanitized.gpu || null),
+      displaySize: isService ? null : (sanitized.displaySize || null),
+      condition: isService ? 'Service' : (sanitized.condition || 'Brand New'),
+      hsn: sanitized.hsn || (isService ? '9987' : '8471'),
+      gstPercent: parseFloat(sanitized.gstPercent) !== undefined ? parseFloat(sanitized.gstPercent) : 18,
+      purchasePrice: parseFloat(sanitized.purchasePrice) || 0,
+      sellingPrice: parseFloat(sanitized.sellingPrice) || 0,
+      minStock: isService ? 0 : (parseInt(sanitized.minStock) || 1),
+      warranty: sanitized.warranty || (isService ? '30 Days Service Warranty' : '1 Year'),
+      notes: sanitized.notes || null,
     };
 
     if (isService) {
