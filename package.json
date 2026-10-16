@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "db:optimize": "tsx scripts/optimize-db.ts"
+    "db:optimize": "tsx scripts/optimize-db.ts",
+    "test:safeguards": "tsx scripts/verify_production_safeguards.ts",
+    "test": "tsx scripts/verify_production_safeguards.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",

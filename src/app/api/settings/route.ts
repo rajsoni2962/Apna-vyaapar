@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAdmin } from '@/lib/auth';
 
 export async function GET() {
   try {
@@ -45,6 +46,9 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
+    const auth = await requireAdmin(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const body = await request.json();
     const updated = await db.businessSettings.upsert({
       where: { id: 'default' },

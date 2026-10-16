@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, createContext, useContext } from 'react';
+import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import Header from './Header';
 
@@ -9,9 +10,10 @@ const AppLayoutContext = createContext<boolean>(false);
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isInside = useContext(AppLayoutContext);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
 
-  // If already inside an AppLayout, avoid rendering duplicate outer frame/sidebar/header
-  if (isInside) {
+  // If on login page or already inside an AppLayout, avoid rendering outer frame/sidebar/header
+  if (isInside || pathname === '/login') {
     return <>{children}</>;
   }
 

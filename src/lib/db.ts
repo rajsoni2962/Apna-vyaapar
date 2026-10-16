@@ -1,4 +1,7 @@
 import { PrismaClient } from '@prisma/client';
+import { isProductionDatabase, ProductionDatabaseProtectionError } from './db-guard';
+import { isTestContext } from './test-db';
+import { logSecurityEvent } from './security-logger';
 
 /**
  * Optimizes the PostgreSQL database URL for serverless environments (e.g. Vercel).
@@ -34,22 +37,56 @@ if (optimizedUrl) {
   process.env.DATABASE_URL = optimizedUrl;
 }
 
+function createGuardedPrismaClient(url?: string): PrismaClient {
+  const baseClient = new PrismaClient({
+    datasources: url ? { db: { url } } : undefined,
+    log: ['error'],
+  });
+
+  // Client-level fail-closed mutation guard extension
+  const guardedClient = baseClient.$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ model, operation, args, query }) {
+          const writeOperations = [
+            'create',
+            'createMany',
+            'update',
+            'updateMany',
+            'upsert',
+            'delete',
+            'deleteMany',
+          ];
+
+          if (writeOperations.includes(operation)) {
+            // Check if test context is attempting a write on a production database
+            if (isTestContext() && isProductionDatabase(url)) {
+              const msg = `FAIL-CLOSED INTERCEPTION: Blocked test write on model ${model}.${operation} against live production database!`;
+              logSecurityEvent({
+                type: 'BLOCKED_PRODUCTION_WRITE',
+                message: msg,
+                databaseHost: url,
+                source: `PrismaGuard:${model}.${operation}`,
+              });
+              throw new ProductionDatabaseProtectionError(msg);
+            }
+          }
+
+          return query(args);
+        },
+      },
+    },
+  });
+
+  return guardedClient as unknown as PrismaClient;
+}
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
 export const db =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    datasources: optimizedUrl
-      ? {
-          db: {
-            url: optimizedUrl,
-          },
-        }
-      : undefined,
-    log: ['error'],
-  });
+  globalForPrisma.prisma ?? createGuardedPrismaClient(optimizedUrl);
 
 // Always store on globalThis to prevent connection leaks across serverless function warm starts
 globalForPrisma.prisma = db;

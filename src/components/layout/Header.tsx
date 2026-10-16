@@ -13,6 +13,7 @@ import {
   Building2,
   FileText,
   ExternalLink,
+  LogOut,
 } from 'lucide-react';
 import GlobalSearchModal from '../common/GlobalSearchModal';
 
@@ -31,6 +32,16 @@ interface HeaderProps {
 export default function Header({ onToggleMobile }: HeaderProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // ignore
+    } finally {
+      window.location.href = '/login';
+    }
+  };
 
   return (
     <>
@@ -150,6 +161,15 @@ export default function Header({ onToggleMobile }: HeaderProps) {
                       </span>
                       <ExternalLink className="w-3 h-3 text-slate-400" />
                     </a>
+
+                    <button
+                      id="btn-header-signout"
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition cursor-pointer text-left"
+                    >
+                      <LogOut className="w-4 h-4 text-rose-500" />
+                      <span>Sign Out</span>
+                    </button>
                   </div>
                 </div>
               </>

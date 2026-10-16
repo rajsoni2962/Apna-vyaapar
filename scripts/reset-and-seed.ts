@@ -2,10 +2,14 @@ import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { assertSafeForReset } from '../src/lib/db-guard';
 
 const prisma = new PrismaClient();
 
 async function resetAndSeed() {
+  // Fail-closed guard: Blocks table wiping on production database
+  assertSafeForReset({ scriptName: 'scripts/reset-and-seed.ts' });
+
   console.log('====================================================');
   console.log('        ASHIRWAD TECHNOLOGIES - DATA RESET          ');
   console.log('====================================================');

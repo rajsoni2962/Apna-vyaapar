@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth } from '@/lib/auth';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAuth(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const { id } = await params;
     let body: any = {};
     try {
@@ -14,7 +18,7 @@ export async function POST(
       // json optional
     }
 
-    const restoredBy = body.restoredBy?.trim() || 'admin';
+    const restoredBy = auth.user.username;
 
     const invoice = await db.invoice.findUnique({
       where: { id },

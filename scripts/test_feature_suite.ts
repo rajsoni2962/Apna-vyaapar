@@ -1,6 +1,11 @@
-import { db } from '../src/lib/db';
+import { getTestDb } from '../src/lib/test-db';
+import { assertSafeForTesting } from '../src/lib/db-guard';
 
 async function runTestSuite() {
+  // Fail-closed guard: NEVER run against production database
+  assertSafeForTesting({ scriptName: 'scripts/test_feature_suite.ts' });
+  const db = getTestDb();
+
   console.log('================================================================');
   console.log('  ASHIRWAD TECHNOLOGIES: 14-POINT AUTOMATED VERIFICATION SUITE');
   console.log('================================================================\n');

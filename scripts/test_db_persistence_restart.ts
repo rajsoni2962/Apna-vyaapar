@@ -1,14 +1,19 @@
 import { PrismaClient } from '@prisma/client';
 import { execSync } from 'child_process';
+import { assertSafeForTesting } from '../src/lib/db-guard';
+import { getTestDb } from '../src/lib/test-db';
 
 async function main() {
+  // Fail-closed guard: NEVER run against production database
+  assertSafeForTesting({ scriptName: 'scripts/test_db_persistence_restart.ts' });
+
   console.log('=====================================================');
   console.log('DATABASE PERSISTENCE ACROSS RESTART VERIFICATION TEST');
   console.log('=====================================================\n');
 
   // Step 1: Initial Database Connection
-  console.log('1. Connecting to database via initial Prisma instance...');
-  let prisma: PrismaClient | null = new PrismaClient();
+  console.log('1. Connecting to database via isolated test Prisma instance...');
+  let prisma: PrismaClient | null = getTestDb();
 
   // Ensure a test product exists
   let product = await prisma.product.findFirst({ where: { name: 'Restart Verification Laptop' } });

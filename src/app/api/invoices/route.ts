@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth } from '@/lib/auth';
 
 export async function GET(request: Request) {
   try {
@@ -48,6 +49,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAuth(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const authUser = auth.user;
+
     const body = await request.json();
     const {
       customerId,
@@ -340,6 +345,20 @@ export async function POST(request: Request) {
           });
         }
       }
+
+      // Record invoice creation in InvoiceRevisionAudit
+      await tx.invoiceRevisionAudit.create({
+        data: {
+          invoiceId: invoice.id,
+          revisionNumber: 1,
+          action: 'CREATED_FINALIZED',
+          changedBy: authUser.username,
+          changeReason: `Initial invoice creation (${invoiceType || 'TAX_INVOICE'})`,
+          diffSummary: JSON.stringify([{ field: 'status', oldVal: null, newVal: 'Confirmed' }]),
+          previousSnapshot: null,
+          newSnapshot: JSON.stringify(invoice),
+        },
+      });
 
       return invoice;
     });

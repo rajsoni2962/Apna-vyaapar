@@ -1,9 +1,13 @@
-import { db } from '../src/lib/db';
+import { getTestDb } from '../src/lib/test-db';
+import { assertSafeForTesting } from '../src/lib/db-guard';
 import { generateInvoicePdf } from '../src/lib/invoicePdfGenerator';
 
 const baseUrl = 'http://localhost:3000';
 
 async function runAcceptanceTests() {
+  // Fail-closed guard: NEVER run against production database
+  assertSafeForTesting({ scriptName: 'scripts/test_ondemand_pdf_architecture.ts' });
+  const db = getTestDb();
   console.log('================================================================');
   console.log('--- STARTING ON-DEMAND DATA-FIRST PDF ARCHITECTURE TESTS ---');
   console.log('================================================================\n');

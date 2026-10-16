@@ -1,14 +1,20 @@
-import { db } from '../src/lib/db';
+import { getTestDb } from '../src/lib/test-db';
+import { assertSafeForTesting } from '../src/lib/db-guard';
 import { generateInvoicePdf, formatPdfCurrency } from '../src/lib/invoicePdfGenerator';
 import { getInvoiceTypeTitle, getTaxConfigLabel } from '../src/lib/utils';
 
 async function runTestSuite() {
+  // Fail-closed guard: NEVER run against production database
+  assertSafeForTesting({ scriptName: 'scripts/test_invoice_types_and_gst.ts' });
+  const db = getTestDb();
+
   console.log('================================================================');
   console.log('🧪 TESTING INVOICE TYPES, OPTIONAL GST, AND PDF INTEGRATION');
   console.log('================================================================\n');
 
   let passed = 0;
   let failed = 0;
+  const createdTestInvoiceIds: string[] = [];
 
   function assert(condition: boolean, testName: string, details?: any) {
     if (condition) {

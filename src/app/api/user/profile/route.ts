@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth, verifyPassword, hashPassword } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    let user = await db.user.findFirst({
-      where: { role: 'admin' },
+    const auth = await requireAuth(req);
+    if (auth.errorResponse) return auth.errorResponse;
+
+    const user = await db.user.findUnique({
+      where: { id: auth.user.id },
       select: {
         id: true,
         username: true,
@@ -20,33 +24,15 @@ export async function GET() {
     });
 
     if (!user) {
-      user = await db.user.create({
-        data: {
-          username: 'admin',
-          name: 'Raj Soni',
-          email: 'rajsoni2962@gmail.com',
-          phone: '9662278994',
-          bio: 'Proprietor & Lead Systems Specialist at Ashirwad Technologies.',
-          role: 'admin',
-        },
-        select: {
-          id: true,
-          username: true,
-          name: true,
-          email: true,
-          phone: true,
-          avatarUrl: true,
-          bio: true,
-          role: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
+      return NextResponse.json(
+        { success: false, error: 'User profile not found' },
+        { status: 404 }
+      );
     }
 
     // Include quick activity metrics
     const [totalInvoices, totalCustomers, totalProducts] = await Promise.all([
-      db.invoice.count(),
+      db.invoice.count({ where: { isDeleted: false } }),
       db.customer.count(),
       db.product.count(),
     ]);
@@ -73,11 +59,14 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireAuth(req);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const body = await req.json();
     const { name, email, phone, bio, avatarUrl, currentPassword, newPassword } = body;
 
-    const existingUser = await db.user.findFirst({
-      where: { role: 'admin' },
+    const existingUser = await db.user.findUnique({
+      where: { id: auth.user.id },
     });
 
     if (!existingUser) {
@@ -89,7 +78,14 @@ export async function PUT(req: NextRequest) {
 
     // Verify current password if changing password
     if (newPassword) {
-      if (currentPassword && existingUser.password !== currentPassword) {
+      if (!currentPassword) {
+        return NextResponse.json(
+          { success: false, error: 'Current password is required to change password' },
+          { status: 400 }
+        );
+      }
+      const isMatch = verifyPassword(currentPassword, existingUser.password);
+      if (!isMatch) {
         return NextResponse.json(
           { success: false, error: 'Current password does not match' },
           { status: 400 }
@@ -105,7 +101,7 @@ export async function PUT(req: NextRequest) {
         ...(phone !== undefined && { phone }),
         ...(bio !== undefined && { bio }),
         ...(avatarUrl !== undefined && { avatarUrl }),
-        ...(newPassword && { password: newPassword }),
+        ...(newPassword && { password: hashPassword(newPassword) }),
       },
       select: {
         id: true,

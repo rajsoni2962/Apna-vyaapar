@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth } from '@/lib/auth';
 
 export async function GET(
   request: Request,
@@ -42,6 +43,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAuth(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const { id } = await params;
     let body: any = {};
     try {
@@ -51,7 +55,7 @@ export async function DELETE(
     }
 
     const reason = body.reason?.trim() || 'Moved to Recently Deleted';
-    const deletedBy = body.deletedBy?.trim() || 'admin';
+    const deletedBy = auth.user.username;
 
     const invoice = await db.invoice.findUnique({
       where: { id },
@@ -173,6 +177,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAuth(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const { id } = await params;
     const body = await request.json();
     const {
@@ -195,8 +202,8 @@ export async function PUT(
       notes,
       terms,
       revisionReason,
-      changedBy = 'admin',
     } = body;
+    const changedBy = auth.user.username;
 
     if (!revisionReason || !revisionReason.trim()) {
       return NextResponse.json(

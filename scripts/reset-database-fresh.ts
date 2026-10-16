@@ -1,6 +1,10 @@
 import { db } from '../src/lib/db';
+import { assertSafeForReset } from '../src/lib/db-guard';
 
 async function resetDatabaseFresh() {
+  // Fail-closed guard: Blocks table wiping on production database
+  assertSafeForReset({ scriptName: 'scripts/reset-database-fresh.ts' });
+
   console.log('===========================================================');
   console.log('RESETTING DATABASE TO FRESH CLEAN SLATE FOR PRODUCTION');
   console.log('===========================================================\n');

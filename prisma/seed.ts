@@ -1,10 +1,14 @@
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
+import { assertSafeForSeed } from '../src/lib/db-guard';
 
 const prisma = new PrismaClient();
 
 async function main() {
+  // Fail-closed guard: Blocks demo seeding on production database
+  assertSafeForSeed({ scriptName: 'prisma/seed.ts' });
+
   console.log('--- SEEDING ASHIRWAD TECH DATABASE ---');
 
   // 1. Business Profile
