@@ -10,8 +10,12 @@ export async function GET(request: Request) {
     const brand = searchParams.get('brand') || '';
     const productType = searchParams.get('productType') || '';
     const lowStockOnly = searchParams.get('lowStock') === 'true';
+    const includeDeleted = searchParams.get('includeDeleted') === 'true';
 
     const whereClause: any = {};
+    if (!includeDeleted) {
+      whereClause.isDeleted = false;
+    }
 
     if (search) {
       whereClause.OR = [

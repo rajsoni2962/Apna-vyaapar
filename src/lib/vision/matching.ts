@@ -11,7 +11,9 @@ export async function matchProductsWithInventory(
   items: ExtractedItem[],
   supplierId?: string
 ): Promise<ExtractedItem[]> {
-  const allProducts = await db.product.findMany();
+  const allProducts = await db.product.findMany({
+    where: { isDeleted: false },
+  });
 
   return items.map((item) => {
     const rawName = (item.item_name?.value || '').trim();

@@ -93,9 +93,35 @@ export async function DELETE(
     if (auth.errorResponse) return auth.errorResponse;
 
     const { id } = await params;
+
+    // Check if product is referenced in sales invoices, purchases, or serial numbers
+    const [invoiceItemCount, purchaseItemCount, serialCount] = await Promise.all([
+      db.invoiceItem.count({ where: { productId: id } }),
+      db.purchaseItem.count({ where: { productId: id } }),
+      db.serialNumber.count({ where: { productId: id } }),
+    ]);
+
+    if (invoiceItemCount > 0 || purchaseItemCount > 0 || serialCount > 0) {
+      // Soft-delete to preserve legal audit & invoice history without foreign key violations
+      await db.product.update({
+        where: { id },
+        data: {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedBy: auth.user.username || 'admin',
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        message: 'Product archived and removed from stock list (historical sales records preserved).',
+      });
+    }
+
+    // If completely unreferenced, perform clean database deletion
     await db.product.delete({ where: { id } });
     return NextResponse.json({ success: true, message: 'Product deleted' });
   } catch (error: any) {
+    console.error('Product DELETE error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

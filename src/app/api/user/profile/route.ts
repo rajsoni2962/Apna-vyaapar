@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     const [totalInvoices, totalCustomers, totalProducts] = await Promise.all([
       db.invoice.count({ where: { isDeleted: false } }),
       db.customer.count(),
-      db.product.count(),
+      db.product.count({ where: { isDeleted: false } }),
     ]);
 
     return NextResponse.json({

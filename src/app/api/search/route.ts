@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     const [products, invoices, purchases, customers, suppliers, serialNumbers] = await Promise.all([
       db.product.findMany({
         where: {
+          isDeleted: false,
           OR: [
             { name: { contains: q } },
             { brand: { contains: q } },

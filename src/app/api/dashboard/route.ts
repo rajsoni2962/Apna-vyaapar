@@ -43,7 +43,9 @@ export async function GET(request: Request) {
     const periodPurchasesTotal = purchaseBills.reduce((acc, po) => acc + po.grandTotal, 0);
 
     // 3. Current Stock Value and Count
-    const products = await db.product.findMany();
+    const products = await db.product.findMany({
+      where: { isDeleted: false },
+    });
     const currentStockValue = products.reduce((acc, p) => acc + p.currentStock * p.purchasePrice, 0);
     const totalStockUnits = products.reduce((acc, p) => acc + p.currentStock, 0);
     const lowStockItems = products.filter((p) => p.currentStock <= p.minStock);

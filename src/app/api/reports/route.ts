@@ -86,6 +86,7 @@ export async function GET(request: Request) {
 
     if (reportType === 'stock') {
       const products = await db.product.findMany({
+        where: { isDeleted: false },
         orderBy: { name: 'asc' },
         include: {
           _count: { select: { serialNumbers: true } },

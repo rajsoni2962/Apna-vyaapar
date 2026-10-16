@@ -113,6 +113,11 @@ model Product {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Soft Delete fields
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
+  deletedBy    String?
+
   serialNumbers SerialNumber[]
   invoiceItems  InvoiceItem[]
   purchaseItems PurchaseItem[]
@@ -122,6 +127,7 @@ model Product {
   @@index([brand])
   @@index([category])
   @@index([productType])
+  @@index([isDeleted])
 }
 
 model SerialNumber {
